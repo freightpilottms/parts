@@ -6,3 +6,5 @@ Gemini: default model gemini-3.8-flash, actionable errors for model/access/quota
 Verified: TypeScript, production build, 49 integration checks.
 Source changes in this release are not yet published to Vercel.
 No credentials included.
+
+Added Ostali dijelovi category. Gemini low thinking and 50-second timeout; requires web grounding metadata before accepting AI results. Direct API responds 200 after billing activation, but tested result had no grounding metadata. Full live lookup not yet verified successful.
