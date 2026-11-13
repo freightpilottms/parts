@@ -1,0 +1,76 @@
+/* Shared mobile alignment and touch targets. Desktop styles stay in globals.css. */
+@media (max-width: 760px) {
+  .dashboard, .login-page, .modal { text-align: center; }
+  .topbar-inner { height: auto; min-height: 110px; padding: 16px; flex-direction: column; gap: 12px; }
+  .account { margin: 0; justify-content: center; }
+  .brand, .profile, .owner-cell, .story-footer { justify-content: center; }
+  .page-heading, .inventory-head, .search-description, .block-heading,
+  .section-label, .pagination, .form-section-title, .price-entry,
+  .reference-photo, footer { flex-direction: column; justify-content: center; align-items: center; gap: 12px; }
+  .live-label { font-size: 11px; gap: 8px; margin: 0; }
+  .search-panel { justify-content: center; }
+  .search-description { flex-basis: 100%; }
+  .inventory-head h2, .stat>div, .stat.profit p, .login-note { justify-content: center; }
+  .inventory-head p { max-width: none; }
+  .primary, .secondary, .quiet, .manual-link, .install-app-button,
+  .oem-search .primary, .inventory-head .secondary, .upload-zone .secondary,
+  .button-row.wrap .secondary, .login-form form .primary {
+    min-height: 48px; height: auto; padding: 10px 12px; font-size: 13px;
+    justify-content: center; text-align: center; white-space: normal;
+  }
+  .inventory-head>.secondary, .empty>.quiet, .manual-link { width: 100%; max-width: 360px; margin-inline: auto; }
+  .oem-search { display: grid; grid-template-columns: minmax(0,1fr); padding: 8px; width: 100%; max-width: 360px; flex-basis: 100%; }
+  .oem-search>svg { display: none; }
+  .oem-search input { min-height: 48px; font-size: 16px; }
+  input:not([type=file]), select { text-align: center; }
+  .field input, .field select { min-height: 48px; }
+  .table-toolbar { justify-content: center; }
+  .tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); width: 100%; gap: 8px; }
+  .tabs button { min-height: 48px; justify-content: center; }
+  .table-search { justify-content: center; min-height: 48px; }
+  .table-search input { font-size: 16px; }
+  .filters { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .filters>svg { display: none; }
+  .filters select { width: 100%; max-width: 100%; min-height: 48px; font-size: 12px; }
+  .sort { grid-column: 1 / -1; margin: 0; justify-content: center; }
+  .sort select { width: auto; flex: 1; }
+  th, td { text-align: center; }
+  th button { min-height: 44px; }
+  .photo-thumb { margin: auto; width: 48px; height: 48px; }
+  .icon-button, .account>.icon-button, .pagination .icon-button, .image-dot {
+    width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  }
+  .page-number { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+  .stat { text-align: center; }
+  .stat>div { flex-wrap: wrap; }
+  .stat.profit p { align-items: center; }
+  .category-row { display: grid; grid-template-columns: minmax(0,1fr) 32px; gap: 8px; min-height: 48px; }
+  .category-row>span { min-width: 0; text-align: center; }
+  .category-row b { text-align: center; }
+  .bar-track { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+  .activity-list { padding: 0; }
+  .activity-row { flex-direction: column; align-items: center; }
+  footer>span:last-child { margin: 0; }
+  .modal-head { position: relative; justify-content: center; align-items: center; padding: 20px 58px; min-height: 84px; }
+  .modal-head>.icon-button { position: absolute; top: 14px; right: 8px; }
+  .modal-head h2, .modal-head p { overflow-wrap: anywhere; }
+  .modal-actions, .upload-zone>.button-row, .button-row.wrap {
+    display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px;
+    width: 100%; justify-content: center;
+  }
+  .modal-actions>* , .upload-zone>.button-row>*, .button-row.wrap>* { width: 100%; min-width: 0; }
+  .modal-actions>:only-child { grid-column: 1 / -1; }
+  .lookup-notice { flex-direction: column; align-items: center; }
+  .price-entry .field { width: 100%; }
+  .sources a { justify-content: center; }
+  .reference-photo { max-height: none; }
+  .photo-controls { flex-wrap: wrap; justify-content: center; gap: 12px; }
+  .photo-controls .button-row { justify-content: center; }
+  .upload-previews { flex-wrap: wrap; padding-top: 14px; gap: 20px; }
+  .upload-previews button { width: 44px; height: 44px; top: -14px; right: -12px; }
+  .user-list>div { justify-content: center; flex-wrap: wrap; }
+  .user-list>div>svg { margin-left: 0; }
+  .login-story { align-items: center; }
+  .install-app-button { left: 50%; right: auto; transform: translateX(-50%); width: calc(100% - 32px); max-width: 360px; }
+  .install-help ol { padding: 0; list-style-position: inside; }
+}

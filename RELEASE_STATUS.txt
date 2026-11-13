@@ -10,3 +10,5 @@ Framework: Next.js. Build: npm run build. Install: npm install. Remove old dist 
 Copy .env.example to .env.local for local setup, then fill private values.
 Run npm run db:setup against Supabase and activate initial users locally before public login.
 Source is ready for deployment configuration; live database and AI calls still need verification.
+Mobile centering and consistent action sizes included. Production build passed. Gemini selected; private key excluded. Visual mobile review and live services remain unverified.
+Login hero now uses local auto-parts artwork with promotional copy removed. Confirmed domain: https://dijelovi.vercel.app. Pooler TCP connection blocked with EACCES; remote initialization is not confirmed.
