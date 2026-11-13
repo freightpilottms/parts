@@ -1,9 +1,8 @@
-PARTS release
-Domain: https://dijelovi.vercel.app
-Supabase: parts_app schema created; 8 tables have RLS enabled; 4 initial users created.
-Vercel: DATABASE_URL pooler updated; APP_ORIGIN, AI_PROVIDER, GEMINI_MODEL added; existing GEMINI_API_KEY present.
-Local changes: hidden Administrator, actor filtering, owner-only assignment and sales, button-only mobile alignment.
-36 integration checks and production build passed before optional CA support was added.
-Latest local code publication awaits explicit GitHub upload authorization.
-Initial password 1234 works locally and on Vercel; password change is required before inventory access.
-Private credentials are excluded.
+Parts release — 2026-11-13
+
+New: authenticated XLSX / CSV export of all filtered inventory, printable report with PDF via browser print. Three equal mobile actions. Maximum 20,000 items per export, explicit error beyond limit.
+Fixed: mobile password form sizing, copyright spacing; installation action appears before copyright.
+Gemini: default model gemini-3.8-flash, actionable errors for model/access/quota failures. Existing Vercel GEMINI_MODEL setting updated, redeploy awaits identity verification. Google API currently returns quota error 429.
+Verified: TypeScript, production build, 49 integration checks.
+Source changes in this release are not yet published to Vercel.
+No credentials included.

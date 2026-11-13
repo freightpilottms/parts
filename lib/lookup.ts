@@ -7,7 +7,7 @@ export async function lookup(number:string){
  const known=await db.query('SELECT i.*, (SELECT id FROM parts_app.photos p WHERE p.item_id=i.id ORDER BY created_at LIMIT 1) photo_id FROM parts_app.items i WHERE normalized=$1 ORDER BY created_at DESC LIMIT 1',[key]);
  if(known.rows.length){const i=known.rows[0];return {...i,photo:i.photo_id?`/api/photos/${i.photo_id}`:null,origin:'database',message:'Pronađeno u vašoj bazi. Provjerite podatke za novi primjerak.'};}
  const provider=process.env.AI_PROVIDER||(process.env.OPENAI_API_KEY?'openai':process.env.GEMINI_API_KEY?'gemini':'web');
- const cacheKey=key+':'+provider+':'+(provider==='openai'?(process.env.OPENAI_MODEL||'gpt-5-mini'):(process.env.GEMINI_MODEL||'gemini-2.5-flash'));
+ const cacheKey=key+':'+provider+':'+(provider==='openai'?(process.env.OPENAI_MODEL||'gpt-5-mini'):(process.env.GEMINI_MODEL||'gemini-3.8-flash'));
  const cached=await db.query('SELECT data FROM parts_app.lookup_cache WHERE normalized=$1 AND expires>now()',[cacheKey]);if(cached.rows[0])return {...cached.rows[0].data,origin:'cache'};
  let result:any={part_number:number,name:'',vehicle:'',category:categories[0],estimates:{},sources:[],photo:null,origin:'internet',message:'Nema potvrđenog podudaranja. Unesite podatke ručno ili provjerite izvore.'};
  if((provider==='openai'&&process.env.OPENAI_API_KEY)||(provider==='gemini'&&process.env.GEMINI_API_KEY)){
@@ -20,7 +20,7 @@ export async function lookup(number:string){
  if(body.status==='incomplete'||!output.some((o:any)=>o.type==='web_search_call'&&o.status==='completed'))throw Object.assign(Error('GPT nije zavrsio web-provjeru. Pokusajte ponovo ili unesite dio rucno.'),{status:502});
  raw=output.filter((o:any)=>o.type==='message').flatMap((o:any)=>o.content||[]).filter((c:any)=>c.type==='output_text').map((c:any)=>c.text).join('');
  }else{
- const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(process.env.GEMINI_MODEL||'gemini-2.5-flash')}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY!},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],tools:[{google_search:{}}]}),signal:AbortSignal.timeout(40000)});
+ const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(process.env.GEMINI_MODEL||'gemini-3.8-flash')}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY!},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],tools:[{google_search:{}}]}),signal:AbortSignal.timeout(40000)});
  if(!r.ok)throw Object.assign(Error('AI pretraga trenutno nije dostupna. Pokušajte ponovo ili unesite dio ručno.'),{status:502});
  const body=await r.json();raw=body.candidates?.[0]?.content?.parts?.map((p:any)=>p.text||'').join('')||'';
  }

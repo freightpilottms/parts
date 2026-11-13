@@ -6,6 +6,7 @@ import {db,transaction} from '@/lib/db';
 import {user,session,verify,hash,digest,rate} from '@/lib/auth';
 import {categories,normalize} from '@/lib/shared';
 import {lookup} from '@/lib/lookup';
+import {inventoryCsv,inventoryXlsx,inventoryPrint} from '@/lib/inventory-export';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export const maxDuration=60;
@@ -50,13 +51,23 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash('1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
  }
  if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number));}
- if(route==='items'&&method==='GET'){
+ if((route==='items'||route==='items/export')&&method==='GET'){
+ const exporting=route==='items/export';
+ const format=req.nextUrl.searchParams.get('format')||'xlsx';
+ if(exporting&&!['xlsx','csv','print'].includes(format))fail('Nepoznat format izvoza.');
  const q=(req.nextUrl.searchParams.get('q')||'').slice(0,100);const status=req.nextUrl.searchParams.get('status')||'available';const cat=req.nextUrl.searchParams.get('category')||'';const owner=req.nextUrl.searchParams.get('owner')||'';if(owner)uuid.parse(owner);
  const page=Math.max(1,Math.min(100000,Number(req.nextUrl.searchParams.get('page'))||1));
  const sort:Record<string,string>={newest:'i.created_at DESC',name:'i.name ASC',price_asc:'i.price ASC',price_desc:'i.price DESC',number:'i.part_number ASC',sold:'i.sold_at DESC NULLS LAST'};
  const where="WHERE ($1='' OR i.name ILIKE '%'||$1||'%' OR i.vehicle ILIKE '%'||$1||'%' OR i.normalized LIKE '%'||$2||'%') AND ($3='all' OR i.status=$3) AND ($4='' OR i.category=$4) AND ($5='' OR i.owner_id::text=$5)";
  const vals=[q,normalize(q)||'__',status,cat,owner];
- const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT 30 OFFSET $6`,[...vals,(page-1)*30]);
+ const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT ${exporting?20001:30} OFFSET $6`,[...vals,exporting?0:(page-1)*30]);
+ if(exporting){
+ if(rows.rows.length>20000)fail('Izvoz je ogranicen na 20.000 artikala. Suzite filtere.',413);
+ const filename='parts-skladiste-'+new Date().toISOString().slice(0,10);
+ const scope=[status==='all'?'Svi artikli':status==='sold'?'Prodani artikli':'Dostupni artikli',cat,q?'Pretraga: '+q:'',owner?'Korisnik: '+(rows.rows[0]?.owner||'odabrani'):'Svi korisnici'].filter(Boolean).join(' / ');
+ const content=format==='xlsx'?new Uint8Array(inventoryXlsx(rows.rows)):format==='csv'?inventoryCsv(rows.rows):inventoryPrint(rows.rows,scope);
+ return new NextResponse(content,{headers:{'Content-Type':format==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':format==='csv'?'text/csv; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':format==='print'?'inline':`attachment; filename="${filename}.${format}"`}});
+ }
  const count=await db.query(`SELECT count(*) FROM parts_app.items i ${where}`,vals);return json({items:rows.rows,total:Number(count.rows[0].count),page});
  }
  if(route==='items'&&method==='POST'){

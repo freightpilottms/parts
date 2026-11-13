@@ -43,5 +43,28 @@
   .photo-controls .button-row { justify-content: center; }
   .upload-previews { flex-wrap: wrap; padding-top: 14px; gap: 20px; }
   .upload-previews button { width: 44px; height: 44px; top: -14px; right: -12px; }
-  .install-app-button { left: 50%; right: auto; transform: translateX(-50%); width: calc(100% - 32px); max-width: 360px; }
+  .install-app-button { width: 100%; max-width: 360px; }
+}
+
+.inventory-export{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0 24px 20px;max-width:540px;margin-left:auto}
+.inventory-export .secondary{min-width:0;min-height:46px;justify-content:center;gap:8px;text-decoration:none}
+.install-app-button{position:static;transform:none;justify-content:center;margin:20px auto 0;width:max-content;max-width:100%}
+footer{padding-bottom:12px}
+.login-form{padding-bottom:12px}
+.login-form>small{margin-top:20px}
+.password-screen{display:flex;flex-direction:column;min-width:0;width:100%;min-height:100dvh;padding:24px 16px 12px}
+.password-screen .card{width:100%;max-width:420px;min-width:0;margin:auto;padding:26px}
+.password-screen .field,.password-screen input{min-width:0;width:100%}
+.password-footer{flex-shrink:0;width:100%;text-align:center;padding-top:20px;color:var(--muted)}
+.password-footer small{display:block;margin-top:18px;font-size:11px}
+@media(max-width:760px){
+ .inventory-export{max-width:none;margin:0;padding:0 14px 16px;gap:7px}
+ .inventory-export .secondary{font-size:12px;padding:10px 6px;gap:6px}
+ .login-page{display:flex;flex-direction:column;padding-bottom:0}
+ .login-story{flex-shrink:0}
+ .login-form{display:flex;flex-direction:column;flex:1;width:100%;max-width:420px;padding:24px 20px 12px;margin-inline:auto}
+ .login-form>small{margin-top:auto;padding-top:20px}
+ .login-form .install-app-button{margin-bottom:0}
+ .password-screen .card{padding:22px;flex-shrink:0}
+ footer{padding-bottom:12px}
 }

@@ -21,6 +21,7 @@ try{
  await pool.query(fs.readFileSync('scripts/schema.sql','utf8'));
  const me=(await pool.query('INSERT INTO parts_app.users(username,password,must_change) VALUES($1,$2,false) RETURNING id',['TestAdmin',hash('Test-safe-password!')])).rows[0];
  check((await call('items')).status===401,'anonymous inventory denied');
+ check((await call('items/export?format=xlsx')).status===401,'anonymous export denied');
  check((await call('photos/00000000-0000-4000-8000-000000000000')).status===401,'anonymous photos denied');
  check((await call('login',{username:'TestAdmin',password:'Test-safe-password!'},{origin:'https://evil.example'})).status===403,'cross-origin login denied');
  check((await call('login',{username:'TestAdmin',password:'Test-safe-password!'})).status===200,'valid login');
@@ -44,11 +45,18 @@ try{
  for(let i=0;i<31;i++)await pool.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,category,owner_id,price,created_by) VALUES($1,$1,$2,$3,$4,$5,$6,$5)',['TEST'+i,'Test '+i,'Audi',item.category,me.id,i]);
  const first=await call('items?sort=price_asc');const second=await call('items?page=2&sort=price_asc');check(first.body.items.length===30&&second.body.items.length===1&&Number(first.body.items[0].price)===0,'30-item pagination and sorting');
  check((await call('items?q='+encodeURIComponent("'; DROP TABLE parts_app.items;--"))).status===200,'SQL injection treated as search data');
+ const csv=await call('items/export?format=csv&sort=price_asc');
+ const csvText=Buffer.from(csv.body).toString('utf8');check(csv.status===200&&csvText.split('\r\n').length===32,'export contains all 31 filtered items beyond pagination');
+ const xlsx=await call('items/export?format=xlsx&status=sold');const zip=require('fflate').unzipSync(new Uint8Array(xlsx.body));const sheet=Buffer.from(zip['xl/worksheets/sheet1.xml']).toString('utf8');check(sheet.includes('4G0 807-065')&&!sheet.includes('TEST0')&&sheet.includes('<v>0</v>'),'xlsx honors sold filter and preserves zero sale');
+ const print=await call('items/export?format=print&q='+encodeURIComponent('<script>alert(1)</script>'));const html=Buffer.from(print.body).toString('utf8');check(!html.includes('<script>alert(1)</script>')&&html.includes('&lt;script&gt;'),'print escapes untrusted filter text');
+ const {inventoryCsv}=require('../lib/inventory-export.ts');check(inventoryCsv([{part_number:'=1+1',price:0}]).includes("' =".replace(' ', '')+'1+1'),'CSV neutralizes spreadsheet formulas');
+ check((await call('items/export?format=bad')).status===400,'invalid export format rejected');
  const newbie=await call('users',{username:'NewUser'});check(newbie.status===201,'create user');
  const newJar=makeJar();const previousVercel=process.env.VERCEL;process.env.VERCEL='1';
  const firstLogin=await call('login',{username:'NewUser',password:'1234'},{jar:newJar});
  check(firstLogin.status===200&&firstLogin.body.must_change===true,'default password works on Vercel and requires change');
  check((await call('users',undefined,{jar:newJar})).status===403,'initial session cannot list users');
+ check((await call('items/export',undefined,{jar:newJar})).status===403,'initial password cannot export');
  check((await call('costs',{goods:0,transport:0},{jar:newJar})).status===403,'initial session cannot change costs');
  const initialToken=newJar.get('parts_session').value;
  check((await call('items',undefined,{jar:newJar})).status===403,'initial password cannot access inventory');

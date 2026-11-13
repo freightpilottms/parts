@@ -18,7 +18,7 @@ Pocetni korisnici: Administrator, Adem, Juso, Almin. Pocetna lozinka je `1234`, 
 
 1. OEM broj se normalizuje uklanjanjem razmaka i crtica, a prvo se pretražuje indeks u bazi.
 2. Internetski rezultat je keširan 24 sata.
-3. Uz `GEMINI_API_KEY` koristi se Gemini sa Google Search groundingom. Model se podešava kroz `GEMINI_MODEL` (zadano `gemini-2.5-flash`). Pozivi su isključivo serverski. Kvota i cijena zavise od Google projekta; besplatan rad nije garantovan.
+3. Uz `GEMINI_API_KEY` koristi se Gemini sa Google Search groundingom. Model se podešava kroz `GEMINI_MODEL` (zadano `gemini-3.8-flash`). Pozivi su isključivo serverski. Kvota i cijena zavise od Google projekta; besplatan rad nije garantovan.
 4. Bez AI ključa radi pokušaj besplatne Bing RSS pretrage izvora; ona ne garantuje dostupnost ni prepoznavanje. Ručni unos je uvijek dostupan. Ne izmišljaju se slike, podudaranja ili cijene.
 5. AI prijedloge i kompatibilnost treba potvrditi. Prikazuju se izvori, broj ponuda i prosjek odvojeno za EU/BiH i novo/polovno. I jedan oglas ostaje označen kao jedna ponuda, ne pouzdan tržišni prosjek. Ponude u EUR pretvaraju se u KM po 1,95583. Ponovljeni URL-ovi se ne računaju dvaput.
 6. Referentna internetska slika nije fotografija korisnikovog artikla i ne prenosi se automatski među njegove fotografije.
@@ -65,7 +65,7 @@ Dugme Instaliraj aplikaciju koristi nativnu instalaciju kada je preglednik podrz
 
 ## Izbor AI servisa
 
-- Google: `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL=gemini-2.5-flash`.
+- Google: `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL=gemini-3.8-flash`.
 - OpenAI: `AI_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-5-mini`.
 
 Kljucevi su iskljucivo serverski (bez NEXT_PUBLIC_). Nakon Vercel izmjene varijabli uradite Redeploy. GPT koristi Responses API s web-pretragom, najvise tri tool poziva po zahtjevu; stvarna potrosnja zavisi od tokena i web poziva. AI rezultati se kesiraju odvojeno po provajderu/modelu. Podrska je implementirana; poziv uz stvarni kljuc treba provjeriti nakon konfiguracije.
