@@ -45,9 +45,19 @@ try{
  const first=await call('items?sort=price_asc');const second=await call('items?page=2&sort=price_asc');check(first.body.items.length===30&&second.body.items.length===1&&Number(first.body.items[0].price)===0,'30-item pagination and sorting');
  check((await call('items?q='+encodeURIComponent("'; DROP TABLE parts_app.items;--"))).status===200,'SQL injection treated as search data');
  const newbie=await call('users',{username:'NewUser'});check(newbie.status===201,'create user');
- const newJar=makeJar();await call('login',{username:'NewUser',password:'1234'},{jar:newJar});check((await call('items',undefined,{jar:newJar})).status===403,'initial password cannot access inventory');
+ const newJar=makeJar();const previousVercel=process.env.VERCEL;process.env.VERCEL='1';
+ const firstLogin=await call('login',{username:'NewUser',password:'1234'},{jar:newJar});
+ check(firstLogin.status===200&&firstLogin.body.must_change===true,'default password works on Vercel and requires change');
+ check((await call('users',undefined,{jar:newJar})).status===403,'initial session cannot list users');
+ check((await call('costs',{goods:0,transport:0},{jar:newJar})).status===403,'initial session cannot change costs');
+ const initialToken=newJar.get('parts_session').value;
+ check((await call('items',undefined,{jar:newJar})).status===403,'initial password cannot access inventory');
  check((await call('password',{current:'1234',password:'NewUser123'},{jar:newJar})).status===200,'simple letters and numbers accepted, including username');
  check((await call('items',undefined,{jar:newJar})).status===200,'new password unlocks inventory');
+ check((await call('me',undefined,{jar:newJar})).body.must_change===false,'password change clears first login flag');
+ const stale=makeJar();stale.set('parts_session',initialToken);check((await call('me',undefined,{jar:stale})).status===401,'initial session revoked after password change');
+ check((await call('login',{username:'NewUser',password:'1234'},{jar:makeJar()})).status===401,'default password no longer works after change');
+ if(previousVercel===undefined)delete process.env.VERCEL;else process.env.VERCEL=previousVercel;
  const savedCookie=newJar.get('parts_session').value;const reopened=makeJar();reopened.set('parts_session',savedCookie);check((await call('me',undefined,{jar:reopened})).status===200,'remembered session works after browser reopen');
  check((await call('password',{current:'NewUser123',password:'abc12'},{jar:newJar})).status===400,'password minimum is six characters');
 

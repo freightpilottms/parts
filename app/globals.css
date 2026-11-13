@@ -14,6 +14,14 @@
 .inventory td:last-child>svg{display:block;margin-inline:auto}
 .inventory td:nth-child(3){min-width:190px;max-width:280px;white-space:normal;overflow-wrap:anywhere}
 .inventory .price-cell,.inventory .oem-cell{font-variant-numeric:tabular-nums}
+.inventory-summary{margin-top:24px}
+.finance-panel{margin-top:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.finance-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 20px;min-height:52px;cursor:pointer;font-weight:600;list-style:none}
+.finance-panel>summary::-webkit-details-marker{display:none}
+.finance-panel>summary svg{flex-shrink:0;transition:transform .15s}
+.finance-panel[open]>summary svg{transform:rotate(180deg)}
+.finance-grid{grid-template-columns:repeat(3,minmax(0,1fr));padding:0 16px 16px}
+@media(max-width:760px){.finance-panel>summary{padding:15px;font-size:13px}.finance-grid{grid-template-columns:1fr;padding:0 12px 12px;gap:10px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation-duration:.01ms!important;transition:none!important}}
 
 .preview-banner{background:#fff2d6;color:#866324;text-align:center;font-size:11px;padding:8px 14px;border-bottom:1px solid #efdfbe}

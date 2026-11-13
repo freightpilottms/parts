@@ -5,5 +5,5 @@ Vercel: DATABASE_URL pooler updated; APP_ORIGIN, AI_PROVIDER, GEMINI_MODEL added
 Local changes: hidden Administrator, actor filtering, owner-only assignment and sales, button-only mobile alignment.
 36 integration checks and production build passed before optional CA support was added.
 Latest local code publication awaits explicit GitHub upload authorization.
-Initial users must activate their passwords locally against the real database before public login.
+Initial password 1234 works locally and on Vercel; password change is required before inventory access.
 Private credentials are excluded.

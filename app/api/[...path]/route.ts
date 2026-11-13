@@ -32,7 +32,6 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  await rate('login-user:'+input.username.toLowerCase(),8,900);
  const {rows}=await db.query('SELECT * FROM parts_app.users WHERE lower(username)=lower($1)',[input.username]);
  if(!rows[0]||!verify(input.password,rows[0].password))fail('Korisničko ime ili lozinka nisu ispravni.',401);
- if(rows[0].must_change&&process.env.VERCEL)fail('Početnu lozinku postavite lokalno prije pristupa javnoj aplikaciji.',403);
  await session(rows[0].id);return json({id:rows[0].id,username:rows[0].username,must_change:rows[0].must_change});
  }
  const me=await user();if(!me)fail('Prijavite se za nastavak.',401);

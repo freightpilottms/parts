@@ -8,7 +8,7 @@ Bosanska web aplikacija za evidenciju autodijelova, prilagođena mobitelima i de
 
 `.env.local` sadrži privatni `DATABASE_URL` preuzet iz DOARDS konfiguracije. Nemojte ga commitovati ili dijeliti. Setup koristi isključivo privatnu shemu `parts_app`; ne mijenja DOARDS tabele. Setup je ponovljiv i ne resetuje postojeće lozinke.
 
-Početni korisnici: Administrator, Adem, Juso, Almin. Početna lozinka `1234`; obavezna promjena na najmanje 6 znakova (slova i brojevi su dovoljni; posebni znakovi nisu obavezni). Prvu prijavu obavite lokalno uz stvarnu Supabase bazu prije objave. Vercel odbija početne naloge radi sprečavanja preuzimanja naloga sa javno poznatom lozinkom. Novo dodane korisnike takođe aktivirajte kroz lokalnu aplikaciju povezanu s istom bazom.
+Pocetni korisnici: Administrator, Adem, Juso, Almin. Pocetna lozinka je `1234`, i lokalno i na Vercelu. Prva prijava otvara obaveznu promjenu lozinke (najmanje 6 znakova, bez obaveznih posebnih znakova). Dok se lozinka ne promijeni, API dozvoljava samo podatke o vlastitoj prijavi, promjenu lozinke i odjavu. Nakon promjene, pocetna lozinka i prethodne sesije vise ne vrijede. Isto pravilo vazi za novo dodane korisnike.
 
 ## Lokalni pregled bez Supabasea
 
