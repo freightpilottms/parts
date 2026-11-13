@@ -1,10 +1,7 @@
-Parts release — 2026-11-13
+Parts release
 
-New: authenticated XLSX / CSV export of all filtered inventory, printable report with PDF via browser print. Three equal mobile actions. Maximum 20,000 items per export, explicit error beyond limit.
-Fixed: mobile password form sizing, copyright spacing; installation action appears before copyright.
-Gemini: default model gemini-3.8-flash, actionable errors for model/access/quota failures. Existing Vercel GEMINI_MODEL setting updated, redeploy awaits identity verification. Google API currently returns quota error 429.
-Verified: TypeScript, production build, 49 integration checks.
-Source changes in this release are not yet published to Vercel.
-No credentials included.
-
-Added Ostali dijelovi category. Gemini low thinking and 50-second timeout; requires web grounding metadata before accepting AI results. Direct API responds 200 after billing activation, but tested result had no grounding metadata. Full live lookup not yet verified successful.
+Search update: normalized OEM input and cache keys; compact/lowercase/spaced/hyphenated variants are equivalent. Full suffix is retained.
+Gemini first performs cited web research in plain text, then extracts structured fields from that evidence. Search-only retry when grounding is absent. No fake prices; missing prices do not prevent part identification. Unconfirmed results are not cached.
+Includes Ostali dijelovi, mobile fixes and XLSX/CSV/print exports.
+Validation: production build, TypeScript, 49 integration checks and dedicated lookup checks. Live Gemini research and extraction returned rear bumper for 4G9807511P with sources and offers.
+This source update must be deployed; no credentials included.
