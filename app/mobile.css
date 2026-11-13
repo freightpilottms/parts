@@ -7,7 +7,11 @@
     min-height: 48px; height: auto; padding: 10px 12px; font-size: 13px;
     justify-content: center; text-align: center; white-space: normal;
   }
-  .inventory-head>.secondary, .empty>.quiet, .manual-link { width: 100%; max-width: 360px; margin-inline: auto; }
+  .empty>.quiet, .manual-link { width: 100%; max-width: 360px; margin-inline: auto; }
+  /* Match the two filter columns, including their padding and gap. */
+  .inventory-head { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 7px; padding-inline: 14px; }
+  .inventory-head>div { min-width: 0; }
+  .inventory-head>.secondary { width: 100%; max-width: none; margin: 0; }
   .oem-search { display: grid; grid-template-columns: minmax(0,1fr); padding: 8px; width: 100%; max-width: 360px; flex-basis: 100%; }
   .oem-search>svg { display: none; }
   .oem-search input { min-height: 48px; font-size: 16px; }
