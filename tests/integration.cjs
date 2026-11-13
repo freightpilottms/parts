@@ -71,7 +71,19 @@ try{
 
  const other=(await pool.query('INSERT INTO parts_app.users(username,password,must_change) VALUES($1,$2,false) RETURNING id',['Administrator',hash('Admin123')])).rows[0];
  check(!(await call('users')).body.some(u=>u.username==='Administrator'),'administrator excluded from user list');
- check((await call('items',{...item,owner_id:other.id})).status===403,'cannot assign item to another user');
+ check((await call('items',{...item,owner_id:other.id})).status===400,'hidden administrator cannot be assigned by another user');
+ const delegated=await call('items',{...item,part_number:'DELEGATED123',owner_id:newbie.body.id});
+ check(delegated.status===201&&delegated.body.owner_id===newbie.body.id&&delegated.body.created_by===me.id,'new item can be assigned to another user while retaining creator');
+ const delegatedId=delegated.body.id;
+ check((await call('items/'+delegatedId+'/sell',{price:0})).status===409,'creator cannot sell item assigned to another user');
+ check((await call('items/'+delegatedId+'/owner',{owner_id:newbie.body.id,expected_owner_id:newbie.body.id})).status===403,'existing item cannot be assigned to someone else');
+ check((await call('items/'+delegatedId+'/owner',{owner_id:me.id,expected_owner_id:other.id})).status===409,'stale owner edit rejected');
+ check((await call('items/'+delegatedId+'/owner',{owner_id:me.id,expected_owner_id:newbie.body.id})).status===200,'existing item can be claimed by current user');
+ check((await call('items/'+delegatedId+'/owner',{owner_id:me.id,expected_owner_id:newbie.body.id})).status===200,'repeated self assignment is idempotent');
+ check(Number((await pool.query("SELECT count(*) FROM parts_app.activity WHERE item_id=$1 AND action='owner'",[delegatedId])).rows[0].count)===1,'owner change audited once');
+ check((await call('items/'+delegatedId+'/sell',{price:0},{jar:newJar})).status===409,'previous owner loses sale permission');
+ check((await call('items/'+delegatedId+'/sell',{price:0})).status===200,'current owner can sell for zero');
+ check((await call('items/'+delegatedId+'/owner',{owner_id:newbie.body.id,expected_owner_id:me.id},{jar:newJar})).status===409,'sold item owner cannot be changed');
  const privateItem=(await pool.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,category,owner_id,price,created_by) VALUES($1,$1,$2,$3,$4,$5,10,$5) RETURNING id',['ADMINPART','Admin part','Audi',item.category,other.id])).rows[0];
  check((await call('items/'+privateItem.id+'/sell',{price:0})).status===409,'cannot sell another owner item even for zero');
  check((await pool.query('SELECT status FROM parts_app.items WHERE id=$1',[privateItem.id])).rows[0].status==='available','unauthorized sale leaves inventory unchanged');

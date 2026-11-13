@@ -5,3 +5,8 @@ Gemini first performs cited web research in plain text, then extracts structured
 Includes Ostali dijelovi, mobile fixes and XLSX/CSV/print exports.
 Validation: production build, TypeScript, 49 integration checks and dedicated lookup checks. Live Gemini research and extraction returned rear bumper for 4G9807511P with sources and offers.
 This source update must be deployed; no credentials included.
+
+Assignment update: all visible users selectable at creation; existing available items can only be assigned to the signed-in user. Sold items cannot be reassigned. Sale remains restricted to current holder. Atomic ownership changes with audit and stale-edit protection. TypeScript and 59 integration checks plus lookup checks pass.
+
+Reference/name update: preserve exact component names independently from category; rank up to 3 source-backed exact-OEM image candidates, product photos first; clickable reference image dialog with 100-400% zoom, wheel, pinch, pan and reset. Broken image fallback. New cache version, concurrent lookup deduplication, shorter bounded research, explicit internet refresh for database/cache results.
+Validation: production build, TypeScript, 59 integration checks and lookup tests pass. Live Gemini test 4g9807511p: 24.18s, verified identification, 7 sources, 3 image candidates. Specific bracket OEM was not supplied. Source update not deployed.

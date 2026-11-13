@@ -50,7 +50,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash('1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
  }
- if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number));}
+ if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1'));}
  if((route==='items'||route==='items/export')&&method==='GET'){
  const exporting=route==='items/export';
  const format=req.nextUrl.searchParams.get('format')||'xlsx';
@@ -72,8 +72,22 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  }
  if(route==='items'&&method==='POST'){
  const input=partSchema.parse(await body(req));
- if(input.owner_id!==me.id)fail('Artikal mozete dodijeliti samo sebi.',403);
+ const recipient=await db.query("SELECT id FROM parts_app.users WHERE id=$1 AND (lower(username)<>'administrator' OR id=$2)",[input.owner_id,me.id]);
+ if(!recipient.rows[0])fail('Odabrani korisnik nije dostupan.',400);
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify(input.estimates),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});return json(row,201);
+ }
+ if(path.length===3&&path[0]==='items'&&path[2]==='owner'&&method==='POST'){
+ const id=uuid.parse(path[1]);const input=z.object({owner_id:uuid,expected_owner_id:uuid}).parse(await body(req));
+ if(input.owner_id!==me.id)fail('Objavljeni artikal mozete oznaciti samo kod sebe.',403);
+ await transaction(async c=>{
+ const previous=(await c.query('SELECT owner_id,status FROM parts_app.items WHERE id=$1 FOR UPDATE',[id])).rows[0];
+ if(!previous)fail('Artikal ne postoji.',404);
+ if(previous.status!=='available')fail('Korisnik prodanog artikla se ne mijenja.',409);
+ if(previous.owner_id===me.id)return;
+ if(previous.owner_id!==input.expected_owner_id)fail('Korisnik artikla je u medjuvremenu promijenjen. Osvjezite listu.',409);
+ await c.query('UPDATE parts_app.items SET owner_id=$1 WHERE id=$2',[me.id,id]);
+ await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'owner',$3)",[me.id,id,JSON.stringify({previous_owner_id:previous.owner_id,owner_id:me.id})]);
+ });return json({ok:true,owner_id:me.id,owner:me.username});
  }
  if(path[0]==='items'&&path[2]==='sell'&&method==='POST'){
  const id=uuid.parse(path[1]);const {price}=z.object({price:amount}).parse(await body(req));

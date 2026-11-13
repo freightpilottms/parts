@@ -57,6 +57,17 @@ footer{padding-bottom:12px}
 .password-screen .field,.password-screen input{min-width:0;width:100%}
 .password-footer{flex-shrink:0;width:100%;text-align:center;padding-top:20px;color:var(--muted)}
 .password-footer small{display:block;margin-top:18px;font-size:11px}
+.detail-grid select{width:100%;min-width:0;min-height:44px;margin-top:6px;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;font:inherit}
+.reference-thumbnail{position:relative;padding:0;border:0;background:transparent;cursor:zoom-in;flex-shrink:0}
+.reference-thumbnail>svg{position:absolute;right:6px;bottom:6px;background:white;color:#17785b;border-radius:5px;padding:2px;box-sizing:content-box}
+.reference-choices,.reference-controls{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px}
+.reference-choices button[aria-pressed=true]{background:#e0eee6;color:#17785b}
+.reference-dialog .modal-head h2{font-size:18px;overflow-wrap:anywhere}
+.reference-canvas{height:min(65dvh,600px);overflow:hidden;background:#f0f3f1;touch-action:none;cursor:grab;display:flex;align-items:center;justify-content:center}
+.reference-canvas:active{cursor:grabbing}
+.reference-image .reference-canvas img{width:100%;height:100%;max-width:none;object-fit:contain;user-select:none;pointer-events:none}
+.reference-controls{padding:14px;margin:0}.reference-controls output{min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
+.reference-unavailable{padding:12px;display:flex;align-items:center;gap:8px;font-size:12px}
 @media(max-width:760px){
  .inventory-export{max-width:none;margin:0;padding:0 14px 16px;gap:7px}
  .inventory-export .secondary{font-size:12px;padding:10px 6px;gap:6px}

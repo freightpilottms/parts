@@ -7,7 +7,7 @@ Module._load=function(id,parent,main){if(id==='./db'&&parent.filename.endsWith('
  return {rows:sql.includes('lookup_cache')&&cache.has(args[0])?[{data:cache.get(args[0])}]:[]};
  }}};return original.call(this,id,parent,main);};
 const {partNumberVariants,normalize}=require('../lib/shared.ts');
-const {validateExtraction,parseLookupJson,containsPartNumber}=require('../lib/gemini-lookup.ts');
+const {validateExtraction,parseLookupJson,containsPartNumber,precisePartName,selectReferenceImages}=require('../lib/gemini-lookup.ts');
 const {lookup}=require('../lib/lookup.ts');
 process.env.AI_PROVIDER='gemini';process.env.GEMINI_API_KEY='test-only';process.env.GEMINI_MODEL='gemini-3.8-flash';
 const number='4G9807511P';const evidence='4G9 807 511 P je zadnji branik Audi A6 Avant.\n4G9807511P polovan 250 EUR.';
@@ -20,6 +20,11 @@ const extracted={matched_number:number,identity_quote:evidence.split('\n')[0],na
  assert.equal(containsPartNumber('4G9 807 511 PA',number),false);
  assert.equal(containsPartNumber('OEM 4g9-807-511-p',number),true);
  assert.equal(parseLookupJson('  ```json\n{"name":"dio"}\n```  ').name,'dio');
+ assert.equal(precisePartName({name:'Prednji branik',identity_quote:'OEM X: front bumper bracket'}),'Nosač prednjeg branika');
+ assert.equal(precisePartName({name:'Prednji branik',exact_name_bs:'Lijeva vodilica prednjeg branika'}),'Lijeva vodilica prednjeg branika');
+ const imageEvidence='4G9807511P product https://example.com/product.jpg; 4G9807511P diagram https://example.com/diagram.jpg';
+ const images=selectReferenceImages({images:[{url:'https://example.com/diagram.jpg',kind:'diagram',source_index:0,evidence_quote:'4G9807511P diagram https://example.com/diagram.jpg'},{url:'https://example.com/product.jpg',kind:'product',source_index:0,evidence_quote:'4G9807511P product https://example.com/product.jpg'},{url:'https://example.com/unrelated.jpg',kind:'product',source_index:0,evidence_quote:'4G9807511R unrelated'}]},imageEvidence,sources,number);
+ assert.deepEqual(images,['https://example.com/product.jpg','https://example.com/diagram.jpg']);
  const valid=validateExtraction(extracted,evidence,sources,number);
  assert.equal(valid.verified,true);assert.equal(valid.photo,null);assert.equal(valid.offers[0].url,sources[0].url);
  assert.equal(validateExtraction({...extracted,matched_number:'4G9807511R'},evidence,sources,number).verified,false);
@@ -29,7 +34,7 @@ const extracted={matched_number:number,identity_quote:evidence.split('\n')[0],na
  assert.ok(body.contents[0].parts[0].text.includes(number));
  if(body.tools){assert.ok(body.contents[0].parts[0].text.includes('4G9 807 511 P'));return Response.json({candidates:[{content:{parts:[{text:evidence}]},groundingMetadata:{groundingChunks:[{web:{uri:sources[0].url,title:sources[0].title}}]}}]});}
  return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(extracted)}]}}]});};
- const first=await lookup('4g9807511p');assert.equal(first.name,'Zadnji branik');assert.equal(first.estimates.EU_used.value,488.96);assert.equal(requests,2);
+ const [first,parallel]=await Promise.all([lookup('4g9807511p'),lookup('4G9 807 511 P')]);assert.equal(first,parallel);assert.equal(first.name,'Zadnji branik');assert.equal(first.estimates.EU_used.value,488.96);assert.equal(requests,2);
  const again=await lookup('4G9 807 511 P');assert.equal(again.origin,'cache');assert.equal(requests,2);
  cache.clear();requests=0;
  global.fetch=async()=>{requests++;return Response.json({candidates:[{content:{parts:[{text:'Unverified suggestion'}]}}]});};
