@@ -1,5 +1,13 @@
 node_modules/
-.env
-.env.*
+.next/
+.env*
 !.env.example
 *.log
+*.tsbuildinfo
+.parts-preview/
+.parts-test/
+.vercel/
+.next-preview/
+.next-*/
+
+release/

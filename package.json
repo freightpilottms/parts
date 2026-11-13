@@ -1,17 +1,20 @@
 {
-  "name": "doards-publish",
+  "name": "parts",
   "version": "1.0.0",
-  "private": true,
-  "type": "module",
+  "description": "",
   "scripts": {
-    "dev": "node preview.mjs",
-    "start": "node preview.mjs",
-    "build": "node verify.mjs"
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "db:setup": "node --env-file=.env.local scripts/setup.mjs",
+    "check": "tsc --noEmit",
+    "dev:preview": "node --env-file=.env.local scripts/preview.mjs",
+    "test": "node tests/integration.cjs"
   },
-  "engines": {
-    "node": ">=24.0.0"
-  },
-  "dependencies": {
-    "pg": "^8.23.1"
-  }
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "private": true,
+  "dependencies": {"next":"15.5.28","react":"19.1.0","react-dom":"19.1.0","pg":"8.23.1","zod":"4.6.6","lucide-react":"0.468.0","sharp":"0.35.5","@electric-sql/pglite":"^0.5.9"},
+  "devDependencies": {"typescript":"5.9.3","@types/node":"22.20.5","@types/react":"19.3.0","@types/react-dom":"19.3.0"}
 }

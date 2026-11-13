@@ -1,0 +1,17 @@
+CREATE SCHEMA IF NOT EXISTS parts_app;
+REVOKE ALL ON SCHEMA parts_app FROM PUBLIC, anon, authenticated;
+CREATE TABLE IF NOT EXISTS parts_app.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),username text NOT NULL, password text NOT NULL,must_change boolean NOT NULL DEFAULT true,created_at timestamptz DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS users_name ON parts_app.users(lower(username));
+CREATE TABLE IF NOT EXISTS parts_app.sessions(token text PRIMARY KEY,user_id uuid NOT NULL REFERENCES parts_app.users,expires timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS parts_app.limits(key text PRIMARY KEY,count integer NOT NULL,expires timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS parts_app.items(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),part_number text NOT NULL,normalized text NOT NULL,name text NOT NULL,vehicle text NOT NULL,color text NOT NULL DEFAULT '',category text NOT NULL,owner_id uuid NOT NULL REFERENCES parts_app.users,price numeric(12,2) NOT NULL CHECK(price>=0),estimates jsonb NOT NULL DEFAULT '{}',sources jsonb NOT NULL DEFAULT '[]',status text NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold')),sold_price numeric(12,2) CHECK(sold_price>=0),sold_by uuid REFERENCES parts_app.users,sold_at timestamptz,created_by uuid NOT NULL REFERENCES parts_app.users,created_at timestamptz NOT NULL DEFAULT now(),CHECK((status='available' AND sold_price IS NULL) OR (status='sold' AND sold_price IS NOT NULL)));
+CREATE INDEX IF NOT EXISTS items_part_number ON parts_app.items(normalized);
+CREATE INDEX IF NOT EXISTS items_status_date ON parts_app.items(status,created_at DESC);
+CREATE TABLE IF NOT EXISTS parts_app.photos(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),item_id uuid NOT NULL REFERENCES parts_app.items,bytes bytea NOT NULL,mime text NOT NULL DEFAULT 'image/webp',created_at timestamptz DEFAULT now());
+CREATE TABLE IF NOT EXISTS parts_app.activity(id bigserial PRIMARY KEY,user_id uuid NOT NULL REFERENCES parts_app.users,item_id uuid REFERENCES parts_app.items,action text NOT NULL,details jsonb NOT NULL DEFAULT '{}',created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS parts_app.costs(id integer PRIMARY KEY CHECK(id=1),goods numeric(12,2) NOT NULL DEFAULT 0 CHECK(goods>=0),transport numeric(12,2) NOT NULL DEFAULT 0 CHECK(transport>=0));
+INSERT INTO parts_app.costs(id) VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS parts_app.lookup_cache(normalized text PRIMARY KEY,data jsonb NOT NULL,expires timestamptz NOT NULL);
+REVOKE ALL ON ALL TABLES IN SCHEMA parts_app FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA parts_app FROM PUBLIC,anon,authenticated;
+DO $$ DECLARE t record; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='parts_app' LOOP EXECUTE format('ALTER TABLE parts_app.%I ENABLE ROW LEVEL SECURITY',t.tablename); END LOOP; END $$;
