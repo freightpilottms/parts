@@ -1,10 +1,11 @@
-import {NextRequest,NextResponse} from 'next/server';
+import {NextRequest,NextResponse,after} from 'next/server';
 import {cookies} from 'next/headers';
 import {z} from 'zod';
 import sharp from 'sharp';
 import {db,transaction} from '@/lib/db';
 import {user,session,verify,hash,digest,rate} from '@/lib/auth';
 import {categories,normalize} from '@/lib/shared';
+import {enrichItem} from '@/lib/enrichment';
 import {lookup} from '@/lib/lookup';
 import {inventoryCsv,inventoryXlsx,inventoryPrint} from '@/lib/inventory-export';
 export const runtime='nodejs';
@@ -14,7 +15,7 @@ const amount=z.coerce.number().finite().min(0).max(99999999);
 const uuid=z.string().uuid();
 const safeLink=z.url().refine(v=>v.startsWith('https://'));
 const offerSchema=z.object({market:z.enum(['EU','BIH']),condition:z.enum(['new','used']),price:amount,currency:z.enum(['EUR','BAM']),url:safeLink});
-const partSchema=z.object({part_number:z.string().trim().min(3).max(60).refine(v=>normalize(v).length>=3),name:z.string().trim().min(2).max(180),vehicle:z.string().trim().min(2).max(250),category:z.enum(categories),color:z.string().trim().max(60),owner_id:uuid,price:amount,estimates:z.partialRecord(z.enum(['EU_new','EU_used','BIH_new','BIH_used']),z.object({value:amount,count:z.number().int().min(0).max(1000),offers:z.array(offerSchema).max(100).optional(),basis:z.literal('verified_original_oem').optional(),confidence:z.enum(['single_offer','sample_average']).optional(),warning:z.string().max(200).optional()}).optional()).default({}),sources:z.array(z.object({title:z.string().max(200),url:safeLink})).max(12).default([])});
+const partSchema=z.object({enrich_after_save:z.boolean().default(false),part_number:z.string().trim().min(3).max(60).refine(v=>normalize(v).length>=3),name:z.string().trim().min(2).max(180),vehicle:z.string().trim().min(2).max(250),category:z.enum(categories),color:z.string().trim().max(60),owner_id:uuid,price:amount,estimates:z.partialRecord(z.enum(['EU_new','EU_used','BIH_new','BIH_used']),z.object({value:amount,count:z.number().int().min(0).max(1000),offers:z.array(offerSchema).max(100).optional(),basis:z.literal('verified_original_oem').optional(),confidence:z.enum(['single_offer','sample_average']).optional(),warning:z.string().max(200).optional()}).optional()).default({}),sources:z.array(z.object({title:z.string().max(200),url:safeLink})).max(12).default([])});
 function fail(message:string,status=400):never{throw Object.assign(Error(message),{status});}
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});
 async function bounded(req:NextRequest,limit:number){if(Number(req.headers.get('content-length'))>limit)fail('Zahtjev je prevelik.',413);const reader=req.body?.getReader();if(!reader)return Buffer.alloc(0);let size=0;const chunks:Uint8Array[]=[];while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();fail('Zahtjev je prevelik.',413);}chunks.push(value);}return Buffer.concat(chunks);}
@@ -50,7 +51,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash('1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
  }
- if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1'));}
+ if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',true));}
  if((route==='items'||route==='items/export')&&method==='GET'){
  const exporting=route==='items/export';
  const format=req.nextUrl.searchParams.get('format')||'xlsx';
@@ -72,9 +73,16 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  }
  if(route==='items'&&method==='POST'){
  const input=partSchema.parse(await body(req));
+ if(input.enrich_after_save)await rate('enrich:'+me.id,30,3600);
  const recipient=await db.query("SELECT id FROM parts_app.users WHERE id=$1 AND (lower(username)<>'administrator' OR id=$2)",[input.owner_id,me.id]);
  if(!recipient.rows[0])fail('Odabrani korisnik nije dostupan.',400);
- const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify(input.estimates),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});return json(row,201);
+ const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify({...input.estimates,...(input.enrich_after_save?{_enrichment:{status:'pending',updated_at:new Date().toISOString()}}:{})}),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});if(input.enrich_after_save)after(()=>enrichItem(row.id));return json(row,201);
+ }
+ if(path.length===3&&path[0]==='items'&&path[2]==='enrich'&&method==='POST'){
+ const id=uuid.parse(path[1]);await rate('enrich:'+me.id,30,3600);
+ const r=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment}', $2::jsonb) WHERE id=$1 AND (owner_id=$3 OR created_by=$3) AND (COALESCE(estimates->'_enrichment'->>'status','') NOT IN ('pending','running') OR (estimates->'_enrichment'->>'updated_at')::timestamptz < now()-interval '2 minutes') RETURNING id",[id,JSON.stringify({status:'pending',updated_at:new Date().toISOString()}),me.id]);
+ if(!r.rows[0])fail('Obrada je vec u toku ili artikal nije kod vas.',409);
+ after(()=>enrichItem(id));return json({ok:true},202);
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='owner'&&method==='POST'){
  const id=uuid.parse(path[1]);const input=z.object({owner_id:uuid,expected_owner_id:uuid}).parse(await body(req));

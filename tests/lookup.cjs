@@ -7,13 +7,15 @@ Module._load=function(id,parent,main){if(id==='./db'&&parent.filename.endsWith('
  return {rows:sql.includes('lookup_cache')&&cache.has(args[0])?[{data:cache.get(args[0])}]:[]};
  }}};if(id==='./product-page'&&parent.filename.endsWith('gemini-lookup.ts'))return {loadProductPage:async()=>({url:'https://example.com/part',title:'Genuine original Audi rear bumper',description:'Used original part',text:'Genuine original Used 250 EUR',images:[],structuredOffers:[{price:250,priceCurrency:'EUR',itemCondition:'https://schema.org/UsedCondition'}]})};return original.call(this,id,parent,main);};
 const {partNumberVariants,normalize}=require('../lib/shared.ts');
-const {validateExtraction,parseLookupJson,containsPartNumber,precisePartName,selectReferenceImages}=require('../lib/gemini-lookup.ts');
+const {validateExtraction,parseLookupJson,containsPartNumber,precisePartName,selectReferenceImages,parseIdentityLines}=require('../lib/gemini-lookup.ts');
 const {lookup}=require('../lib/lookup.ts');
 process.env.AI_PROVIDER='gemini';process.env.GEMINI_API_KEY='test-only';process.env.GEMINI_MODEL='gemini-3.8-flash';
 const number='4G9807511P';const evidence='4G9 807 511 P je zadnji branik Audi A6 Avant.\n4G9807511P polovan 250 EUR.';
 const sources=[{index:0,title:'Catalogue',url:'https://example.com/part'}];
 const extracted={matched_number:number,identity_quote:evidence.split('\n')[0],name:'Zadnji branik',vehicle:'Audi A6 Avant',category:'Zadnji branik',photo:'https://example.com/invented.jpg',offers:[{market:'EU',condition:'used',price:250,currency:'EUR',source_index:0,evidence_quote:evidence.split('\n')[1]}]};
 (async()=>{
+ const labelled='OEM: 4G9 807 511 P\nNAZIV: Zadnji branik\nVOZILO: Audi A6 Avant\nKATEGORIJA: Zadnji branik';
+ assert.equal(parseIdentityLines(labelled,number,sources).name,'Zadnji branik');assert.equal(parseIdentityLines(labelled.replace('511 P','511 PA'),number,sources),null);assert.equal(parseIdentityLines(labelled,number,[]),null);
  assert.deepEqual(partNumberVariants('4g9807511p'),[number,'4G9 807 511 P']);
  assert.equal(normalize('4G9-807 511 p'),number);
  assert.notEqual(normalize('4G9807511AB'),number);
@@ -36,6 +38,8 @@ const extracted={matched_number:number,identity_quote:evidence.split('\n')[0],na
  return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(extracted)}]}}]});};
  const [first,parallel]=await Promise.all([lookup('4g9807511p'),lookup('4G9 807 511 P')]);assert.equal(first,parallel);assert.equal(first.name,'Zadnji branik');assert.equal(first.estimates.EU_used.value,488.96);assert.equal(requests,2);
  const again=await lookup('4G9 807 511 P');assert.equal(again.origin,'cache');assert.equal(requests,2);
+ const identity=await lookup(number,false,true);assert.equal(identity.name,'Zadnji branik');assert.deepEqual(identity.estimates,{});assert.equal(identity.photo,null);assert.equal(identity.enrich_after_save,true);assert.equal(requests,4);
+ const identityCached=await lookup('4g9 807 511 p',false,true);assert.equal(identityCached.origin,'cache');assert.equal(requests,4);
  cache.clear();requests=0;
  global.fetch=async()=>{requests++;return Response.json({candidates:[{content:{parts:[{text:'Unverified suggestion'}]}}]});};
  const none=await lookup(number);assert.equal(none.name,'');assert.deepEqual(none.estimates,{});assert.equal(cache.size,0);assert.equal(requests,2);

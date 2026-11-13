@@ -4,17 +4,17 @@ import {normalize,categories,partNumberVariants} from './shared';
 const decode=(s:string)=>s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/<[^>]+>/g,'').trim();
 const safeUrl=(s:string)=>{try{const u=new URL(s);return u.protocol==='https:'?u.href:'';}catch{return '';}};
 const inFlight=new Map<string,Promise<any>>();
-export async function lookup(number:string,refresh=false){
- const key=normalize(number)+(refresh?':refresh':'');const existing=inFlight.get(key);if(existing)return existing;
- const work=performLookup(number,refresh);inFlight.set(key,work);
+export async function lookup(number:string,refresh=false,identityOnly=false,skipKnown=false){
+ const key=normalize(number)+(refresh?':refresh':'')+(identityOnly?':identity':'')+(skipKnown?':enrichment':'');const existing=inFlight.get(key);if(existing)return existing;
+ const work=performLookup(number,refresh,identityOnly,skipKnown);inFlight.set(key,work);
  try{return await work;}finally{inFlight.delete(key);}
 }
-async function performLookup(number:string,refresh:boolean){
+async function performLookup(number:string,refresh:boolean,identityOnly:boolean,skipKnown:boolean){
  const key=normalize(number);
  const known=await db.query('SELECT i.*, (SELECT id FROM parts_app.photos p WHERE p.item_id=i.id ORDER BY created_at LIMIT 1) photo_id FROM parts_app.items i WHERE normalized=$1 ORDER BY created_at DESC LIMIT 1',[key]);
- if(known.rows.length&&!refresh){const i=known.rows[0];const storedEstimates=Object.fromEntries(Object.entries(i.estimates||{}).filter(([,v]:any)=>v?.basis==='verified_original_oem'));return {...i,estimates:storedEstimates,photo:i.photo_id?`/api/photos/${i.photo_id}`:null,origin:'database',message:'Pronađeno u vašoj bazi. Provjerite podatke za novi primjerak.'};}
+ if(known.rows.length&&!refresh&&!skipKnown){const i=known.rows[0];const storedEstimates=Object.fromEntries(Object.entries(i.estimates||{}).filter(([,v]:any)=>v?.basis==='verified_original_oem'));return {...i,enrich_after_save:identityOnly&&i.estimates?._enrichment?.status!=='complete',photos_reference:i.estimates?._enrichment?.images||[],estimates:storedEstimates,photo:i.photo_id?`/api/photos/${i.photo_id}`:i.estimates?._enrichment?.images?.[0]||null,origin:'database',message:'Pronađeno u vašoj bazi. Provjerite podatke za novi primjerak.'};}
  const provider=process.env.AI_PROVIDER||(process.env.OPENAI_API_KEY?'openai':process.env.GEMINI_API_KEY?'gemini':'web');
- const cacheKey='v4-oem:'+key+':'+provider+':'+(provider==='openai'?(process.env.OPENAI_MODEL||'gpt-5-mini'):(process.env.GEMINI_MODEL||'gemini-3.8-flash'));
+ const cacheKey=(identityOnly?'v5-identity:':'v5-oem:')+key+':'+provider+':'+(provider==='openai'?(process.env.OPENAI_MODEL||'gpt-5-mini'):(process.env.GEMINI_MODEL||'gemini-3.8-flash'));
  const cached=await db.query('SELECT data FROM parts_app.lookup_cache WHERE normalized=$1 AND expires>now()',[cacheKey]);if(cached.rows[0]&&!refresh)return {...cached.rows[0].data,origin:'cache'};
  let result:any={part_number:key,name:'',vehicle:'',category:categories[0],estimates:{},sources:[],photo:null,origin:'internet',message:'Nema potvrđenog podudaranja. Unesite podatke ručno ili provjerite izvore.'};
  if((provider==='openai'&&process.env.OPENAI_API_KEY)||(provider==='gemini'&&process.env.GEMINI_API_KEY)){
@@ -27,7 +27,7 @@ async function performLookup(number:string,refresh:boolean){
  if(body.status==='incomplete'||!output.some((o:any)=>o.type==='web_search_call'&&o.status==='completed'))throw Object.assign(Error('GPT nije zavrsio web-provjeru. Pokusajte ponovo ili unesite dio rucno.'),{status:502});
  raw=output.filter((o:any)=>o.type==='message').flatMap((o:any)=>o.content||[]).filter((c:any)=>c.type==='output_text').map((c:any)=>c.text).join('');
  }else{
- const found=await geminiLookup(key);raw=JSON.stringify(found);
+ const found=await geminiLookup(key,identityOnly);raw=JSON.stringify(found);
  if(!found.verified){result.sources=found.sources;result.category='Ostali dijelovi';result.message=found.sources.length?'Pronadeni su izvori. Identitet dijela nije dovoljno jasan; pregledajte izvore i dopunite podatke.':'Za ovaj broj trenutno nema potvrdenog rezultata. Provjerite broj ili pokusajte ponovo.';return result;}
  }
  try{const parsed=parseLookupJson(raw);result.name=String(parsed.name||'').slice(0,180);result.vehicle=String(parsed.vehicle||'').slice(0,250);if(categories.includes(parsed.category))result.category=parsed.category;result.photo=safeUrl(parsed.photo||'')||null;result.photos_reference=(Array.isArray(parsed.photos_reference)?parsed.photos_reference:[]).map(safeUrl).filter(Boolean).slice(0,3);result.sources=(Array.isArray(parsed.sources)?parsed.sources:[]).filter((s:any)=>safeUrl(s.url)).slice(0,12).map((s:any)=>({title:String(s.title).slice(0,200),url:safeUrl(s.url)}));
@@ -40,6 +40,7 @@ async function performLookup(number:string,refresh:boolean){
  }else{
  try{const r=await fetch(`https://www.bing.com/search?format=rss&q=${encodeURIComponent('"'+number+'" auto part')}`,{headers:{'User-Agent':'PartsInventory/1.0'},signal:AbortSignal.timeout(10000)});const xml=await r.text();result.sources=[...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0,6).map(m=>({title:decode(m[1].match(/<title>([\s\S]*?)<\/title>/)?.[1]||''),url:safeUrl(decode(m[1].match(/<link>([\s\S]*?)<\/link>/)?.[1]||''))})).filter(s=>s.url);result.message='Besplatna web-pretraga: otvorite izvore i potvrdite podatke. Automatsko prepoznavanje, slika i analiza cijena zahtijevaju podesenu AI pretragu.';}catch{result.message='Web-pretraga nije dostupna. Dio možete unijeti ručno. Automatska identifikacija zahtijeva podesenu AI pretragu.';}
  }
+ if(identityOnly){result.enrich_after_save=true;result.message='Naziv i vozilo su pronadeni. Referentne slike i OEM cijene dopunit ce se nakon objave.';}
  if(result.name&&result.vehicle)await db.query("INSERT INTO parts_app.lookup_cache(normalized,data,expires) VALUES($1,$2,now()+interval '24 hours') ON CONFLICT(normalized) DO UPDATE SET data=excluded.data,expires=excluded.expires",[cacheKey,JSON.stringify(result)]);
  return result;
 }

@@ -1,4 +1,5 @@
 import https from 'node:https';
+import {gunzipSync,brotliDecompressSync,inflateSync} from 'node:zlib';
 import {lookup} from 'node:dns/promises';
 import {BlockList,isIP} from 'node:net';
 import {normalize} from './shared';
@@ -18,11 +19,11 @@ export function parseProductPage(html:string,url:string,number:string){
  const products:any[]=[];
  const walk=(v:any,depth=0)=>{if(!v||depth>5)return;if(Array.isArray(v))return v.forEach(x=>walk(x,depth+1));if(typeof v!=='object')return;if([v['@type']].flat().includes('Product'))products.push(v);if(v['@graph'])walk(v['@graph'],depth+1);if(v.mainEntity)walk(v.mainEntity,depth+1);};
  for(const script of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){try{walk(JSON.parse(script[1]));}catch{}}
- const product=products.find(p=>[p.mpn,p.sku,p.productID].some(v=>normalize(String(v||''))===normalize(number)));
+ const product=products.find(p=>[p.mpn,p.sku,p.productID].some(v=>normalize(String(v||''))===normalize(number))||exact(p.name));
  // No broad body-text match: category pages often mention unrelated OEM numbers.
  if(!product&&!exact(title))return null;
  const description=product?text(String(product.description||'')):meta['og:description']||meta.description||'';
- const images=(product?[product.image].flat().map(im=>typeof im==='object'?im?.url:im):[meta['og:image']]).map(im=>imageUrl(im,url)).filter(Boolean).slice(0,3);
+ const images=(product?.image?[product.image].flat().map(im=>typeof im==='object'?im?.url:im):[meta['og:image']]).map(im=>imageUrl(im,url)).filter(Boolean).slice(0,3);
  const structuredOffers=product?[product.offers].flat().filter(Boolean):[];
  return {url,title:String(product?.name||title),description,text:text(html).slice(0,120000),images,structuredOffers};
 }
@@ -33,10 +34,10 @@ export async function loadProductPage(url:string,number:string){
  const addresses=await lookup(u.hostname,{all:true});if(!addresses.length||addresses.some(a=>!publicAddress(a.address)))throw Error('Non-public address');
  const address=addresses[0];const remaining=deadline-Date.now();if(remaining<=0)throw Error('Page timeout');
  return new Promise((resolve,reject)=>{
- const req=https.get(u,{headers:{Accept:'text/html','Accept-Encoding':'identity','User-Agent':'PartsInventory/1.0'},lookup:((_host:any,options:any,callback:any)=>{if(options?.all)callback(null,[address]);else callback(null,address.address,address.family);}) as any},res=>{
+ const req=https.get(u,{headers:{Accept:'text/html','Accept-Encoding':'gzip, br, deflate','User-Agent':'PartsInventory/1.0'},lookup:((_host:any,options:any,callback:any)=>{if(options?.all)callback(null,[address]);else callback(null,address.address,address.family);}) as any},res=>{
  if(res.statusCode&&res.statusCode>=300&&res.statusCode<400&&res.headers.location){res.resume();if(redirects>=3)return reject(Error('Redirect limit'));get(new URL(res.headers.location,u).href,redirects+1).then(resolve,reject);return;}
- if(res.statusCode!==200||!String(res.headers['content-type']).includes('text/html')||(res.headers['content-encoding']&&res.headers['content-encoding']!=='identity')){res.resume();return reject(Error('Unavailable product page'));}
- let size=0;const chunks:Buffer[]=[];res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>1500000){req.destroy(Error('Page too large'));return;}chunks.push(chunk);});res.on('end',()=>resolve({html:Buffer.concat(chunks).toString('utf8'),url:u.href}));res.on('error',reject);
+ if(res.statusCode!==200||!String(res.headers['content-type']).includes('text/html')){res.resume();return reject(Error('Unavailable product page'));}
+ let size=0;const chunks:Buffer[]=[];res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>1500000){req.destroy(Error('Page too large'));return;}chunks.push(chunk);});res.on('end',()=>{try{let bytes=Buffer.concat(chunks);const encoding=res.headers['content-encoding'];const options={maxOutputLength:3000000};if(encoding==='gzip')bytes=gunzipSync(bytes,options);else if(encoding==='br')bytes=brotliDecompressSync(bytes,options);else if(encoding==='deflate')bytes=inflateSync(bytes,options);else if(encoding&&encoding!=='identity')throw Error('Unsupported encoding');resolve({html:bytes.toString('utf8'),url:u.href});}catch(e){reject(e);}});res.on('error',reject);
  });req.setTimeout(remaining,()=>req.destroy(Error('Page timeout')));req.on('error',reject);
  });
  }
