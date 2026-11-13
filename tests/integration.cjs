@@ -50,6 +50,16 @@ try{
  check((await call('items',undefined,{jar:newJar})).status===200,'new password unlocks inventory');
  const savedCookie=newJar.get('parts_session').value;const reopened=makeJar();reopened.set('parts_session',savedCookie);check((await call('me',undefined,{jar:reopened})).status===200,'remembered session works after browser reopen');
  check((await call('password',{current:'NewUser123',password:'abc12'},{jar:newJar})).status===400,'password minimum is six characters');
+
+ const other=(await pool.query('INSERT INTO parts_app.users(username,password,must_change) VALUES($1,$2,false) RETURNING id',['Administrator',hash('Admin123')])).rows[0];
+ check(!(await call('users')).body.some(u=>u.username==='Administrator'),'administrator excluded from user list');
+ check((await call('items',{...item,owner_id:other.id})).status===403,'cannot assign item to another user');
+ const privateItem=(await pool.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,category,owner_id,price,created_by) VALUES($1,$1,$2,$3,$4,$5,10,$5) RETURNING id',['ADMINPART','Admin part','Audi',item.category,other.id])).rows[0];
+ check((await call('items/'+privateItem.id+'/sell',{price:0})).status===409,'cannot sell another owner item even for zero');
+ check((await pool.query('SELECT status FROM parts_app.items WHERE id=$1',[privateItem.id])).rows[0].status==='available','unauthorized sale leaves inventory unchanged');
+ await pool.query("INSERT INTO parts_app.activity(user_id,action) VALUES($1,'costs')",[other.id]);
+ check(!(await call('activity')).body.some(a=>a.user_id===other.id),'administrator actions hidden from activity API');
+ check(Number((await pool.query('SELECT count(*) FROM parts_app.activity WHERE user_id=$1',[other.id])).rows[0].count)===1,'hidden administrator audit retained');
  await call('logout',{});check((await call('items')).status===401,'logout invalidates session');
  const r=await pool.query("SELECT has_schema_privilege('anon','parts_app','USAGE') AS allowed");check(r.rows[0].allowed===false,'public database schema access revoked');
  console.log(`${checks} integration checks passed.`);

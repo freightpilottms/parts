@@ -45,7 +45,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  await transaction(async c=>{await c.query('UPDATE parts_app.users SET password=$1,must_change=false WHERE id=$2',[hash(password),me.id]);await c.query('DELETE FROM parts_app.sessions WHERE user_id=$1',[me.id]);});await session(me.id);return json({ok:true});
  }
  if(me.must_change)fail('Prvo promijenite početnu lozinku.',403);
- if(route==='users'&&method==='GET'){return json((await db.query('SELECT id,username,must_change FROM parts_app.users ORDER BY lower(username)')).rows);}
+ if(route==='users'&&method==='GET'){return json((await db.query("SELECT id,username,must_change FROM parts_app.users WHERE lower(username)<>'administrator' ORDER BY lower(username)")).rows);}
  if(route==='users'&&method==='POST'){
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash('1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
@@ -57,16 +57,17 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const sort:Record<string,string>={newest:'i.created_at DESC',name:'i.name ASC',price_asc:'i.price ASC',price_desc:'i.price DESC',number:'i.part_number ASC',sold:'i.sold_at DESC NULLS LAST'};
  const where="WHERE ($1='' OR i.name ILIKE '%'||$1||'%' OR i.vehicle ILIKE '%'||$1||'%' OR i.normalized LIKE '%'||$2||'%') AND ($3='all' OR i.status=$3) AND ($4='' OR i.category=$4) AND ($5='' OR i.owner_id::text=$5)";
  const vals=[q,normalize(q)||'__',status,cat,owner];
- const rows=await db.query(`SELECT i.*,u.username owner,cb.username creator,sb.username seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT 30 OFFSET $6`,[...vals,(page-1)*30]);
+ const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT 30 OFFSET $6`,[...vals,(page-1)*30]);
  const count=await db.query(`SELECT count(*) FROM parts_app.items i ${where}`,vals);return json({items:rows.rows,total:Number(count.rows[0].count),page});
  }
  if(route==='items'&&method==='POST'){
  const input=partSchema.parse(await body(req));
+ if(input.owner_id!==me.id)fail('Artikal mozete dodijeliti samo sebi.',403);
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify(input.estimates),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});return json(row,201);
  }
  if(path[0]==='items'&&path[2]==='sell'&&method==='POST'){
  const id=uuid.parse(path[1]);const {price}=z.object({price:amount}).parse(await body(req));
- await transaction(async c=>{const r=await c.query("UPDATE parts_app.items SET status='sold',sold_price=$1,sold_by=$2,sold_at=now() WHERE id=$3 AND status='available' RETURNING name,part_number",[price,me.id,id]);if(!r.rows[0])fail('Dio je već prodan ili ne postoji.',409);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'sold',$3)",[me.id,id,JSON.stringify({...r.rows[0],price})]);});return json({ok:true});
+ await transaction(async c=>{const r=await c.query("UPDATE parts_app.items SET status='sold',sold_price=$1,sold_by=$2,sold_at=now() WHERE id=$3 AND owner_id=$2 AND status='available' RETURNING name,part_number",[price,me.id,id]);if(!r.rows[0])fail('Dio je već prodan ili ne postoji.',409);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'sold',$3)",[me.id,id,JSON.stringify({...r.rows[0],price})]);});return json({ok:true});
  }
  if(path[0]==='items'&&path[2]==='photos'&&method==='POST'){
  const id=uuid.parse(path[1]);if(Number(req.headers.get('content-length'))>4_000_000)fail('Fotografija je prevelika. Maksimalno 3 MB.',413);
@@ -84,7 +85,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(route==='costs'&&method==='POST'){
  const input=z.object({goods:amount,transport:amount}).parse(await body(req));await transaction(async c=>{await c.query('UPDATE parts_app.costs SET goods=$1,transport=$2 WHERE id=1',[input.goods,input.transport]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'costs',$2)",[me.id,JSON.stringify(input)]);});return json({ok:true});
  }
- if(route==='activity'&&method==='GET')return json((await db.query('SELECT a.*,u.username,i.name,i.part_number FROM parts_app.activity a JOIN parts_app.users u ON u.id=a.user_id LEFT JOIN parts_app.items i ON i.id=a.item_id ORDER BY a.created_at DESC LIMIT 50')).rows);
+ if(route==='activity'&&method==='GET')return json((await db.query(`SELECT a.*,u.username,i.name,i.part_number FROM parts_app.activity a JOIN parts_app.users u ON u.id=a.user_id LEFT JOIN parts_app.items i ON i.id=a.item_id WHERE lower(u.username)<>'administrator' ORDER BY a.created_at DESC LIMIT 50`)).rows);
  fail('Nije pronađeno.',404);
  }catch(e:any){if(e instanceof z.ZodError)return json({error:'Provjerite unesene podatke. Obavezna polja, cijene i format moraju biti ispravni.'},400);if(e.code==='23505')return json({error:'Korisničko ime već postoji.'},409);if(e.code==='23503')return json({error:'Odabrani korisnik ili artikal ne postoji.'},400);if(e.status)return json({error:e.message},e.status);console.error('Parts API error:',e.code||e.name);return json({error:'Veza s bazom ili servisom trenutno nije dostupna. Pokušajte ponovo.'},503);}
 }

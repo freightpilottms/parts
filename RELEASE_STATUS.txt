@@ -1,14 +1,9 @@
-PARTS - Vercel source release
-Project: parts
-Project ID: prj_EykcrnXzC2eVYtwg4DJCO3jEDuBK
-Includes current password, remembered login, PWA, copyright and dual AI-provider changes.
-Source validation: 30 integration checks and production build passed before packaging.
-Supabase: NOT verified or initialized remotely; connection check returns ENOTFOUND.
-Required before deployment: working DATABASE_URL and APP_ORIGIN; AI provider key for web identification.
-No private environment files, user data, node_modules, or local build outputs included.
-Framework: Next.js. Build: npm run build. Install: npm install. Remove old dist override.
-Copy .env.example to .env.local for local setup, then fill private values.
-Run npm run db:setup against Supabase and activate initial users locally before public login.
-Source is ready for deployment configuration; live database and AI calls still need verification.
-Mobile centering and consistent action sizes included. Production build passed. Gemini selected; private key excluded. Visual mobile review and live services remain unverified.
-Login hero now uses local auto-parts artwork with promotional copy removed. Confirmed domain: https://dijelovi.vercel.app. Pooler TCP connection blocked with EACCES; remote initialization is not confirmed.
+PARTS release
+Domain: https://dijelovi.vercel.app
+Supabase: parts_app schema created; 8 tables have RLS enabled; 4 initial users created.
+Vercel: DATABASE_URL pooler updated; APP_ORIGIN, AI_PROVIDER, GEMINI_MODEL added; existing GEMINI_API_KEY present.
+Local changes: hidden Administrator, actor filtering, owner-only assignment and sales, button-only mobile alignment.
+36 integration checks and production build passed before optional CA support was added.
+Latest local code publication awaits explicit GitHub upload authorization.
+Initial users must activate their passwords locally against the real database before public login.
+Private credentials are excluded.
