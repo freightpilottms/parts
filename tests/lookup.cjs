@@ -5,7 +5,7 @@ const cache=new Map();const original=Module._load;
 Module._load=function(id,parent,main){if(id==='./db'&&parent.filename.endsWith('lookup.ts'))return {db:{query:async(sql,args)=>{
  if(sql.startsWith('INSERT')){cache.set(args[0],JSON.parse(args[1]));return {rows:[]};}
  return {rows:sql.includes('lookup_cache')&&cache.has(args[0])?[{data:cache.get(args[0])}]:[]};
- }}};return original.call(this,id,parent,main);};
+ }}};if(id==='./product-page'&&parent.filename.endsWith('gemini-lookup.ts'))return {loadProductPage:async()=>({url:'https://example.com/part',title:'Genuine original Audi rear bumper',description:'Used original part',text:'Genuine original Used 250 EUR',images:[],structuredOffers:[{price:250,priceCurrency:'EUR',itemCondition:'https://schema.org/UsedCondition'}]})};return original.call(this,id,parent,main);};
 const {partNumberVariants,normalize}=require('../lib/shared.ts');
 const {validateExtraction,parseLookupJson,containsPartNumber,precisePartName,selectReferenceImages}=require('../lib/gemini-lookup.ts');
 const {lookup}=require('../lib/lookup.ts');
