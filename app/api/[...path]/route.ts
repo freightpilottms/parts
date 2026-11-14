@@ -28,7 +28,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(!origin||origin!==expected)fail('Zahtjev nije dozvoljen s ove adrese.',403);
  if(!route.endsWith('/photos')&&!req.headers.get('content-type')?.startsWith('application/json'))fail('Očekivan JSON zahtjev.',415);
  }
- if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'full-search-2',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
+ if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'oem-provenance-3',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
  if(route==='login'&&method==='POST'){
  const input=z.object({username:z.string().trim().min(1).max(50),password:z.string().min(1).max(128)}).parse(await body(req));
  await rate('login-user:'+input.username.toLowerCase(),8,900);

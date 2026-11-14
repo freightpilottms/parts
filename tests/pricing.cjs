@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript');
 require.extensions['.ts']=(m,file)=>m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
-const {isGenuineOem,conditionFrom,verifiedOemOffer}=require('../lib/oem-pricing.ts');
+const {isGenuineOem,conditionFrom,verifiedOemOffer,listingOriginality}=require('../lib/oem-pricing.ts');
 const {parseProductPage,publicAddress}=require('../lib/product-page.ts');
 assert.equal(isGenuineOem('OEM reference 4G9807511P'),false);
 assert.equal(isGenuineOem('Original aftermarket replacement OEM quality'),false);
@@ -19,4 +19,10 @@ assert.equal(verifiedOemOffer({price:70,currency:'EUR',condition:'new'},page),fa
 assert.equal(verifiedOemOffer({price:700,currency:'EUR',condition:'new'},{...page,title:'Replacement OEM-quality bumper'}),false);
 for(const ip of ['127.0.0.1','10.1.1.1','169.254.169.254','192.168.1.1','::1','::ffff:127.0.0.1','fe80::1','2002:7f00:1::'])assert.equal(publicAddress(ip),false,ip);
 assert.equal(publicAddress('8.8.8.8'),true);
+assert.equal(listingOriginality('Manufacturer: Audi','Rear bumper'),'original');
+assert.equal(listingOriginality('Removed from Audi A6 donor vehicle','Rear bumper'),'original');
+assert.equal(listingOriginality('OEM','Rear bumper'),'original');
+assert.equal(listingOriginality('unknown','Audi A6 bumper 4G9807511P'),'unconfirmed');
+assert.equal(listingOriginality('OEM quality','Audi bumper'),'aftermarket');
+assert.equal(listingOriginality('not original','Audi bumper'),'aftermarket');
 console.log('OEM pricing and product-image checks passed.');

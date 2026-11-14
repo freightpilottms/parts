@@ -37,5 +37,9 @@ global.fetch=async(url,options)=>Response.json({candidates:[JSON.parse(options.b
  assert.equal(parseMarketLines(rows.join('\n'),{groundingMetadata:{}},number,[source]).offers.length,0,'uncited offer rejected');
  let calls=0;global.fetch=async()=>{calls++;return Response.json({candidates:[{...rowCandidate,content:{parts:[{text:rows.join('\n')}]}}]});};
  const fast=await geminiLookup(number);assert.equal(calls,1,'market rows do not require another AI extraction call');assert.equal(fast.reference_offers.length,1);assert.equal(fast.photos_reference[0],image);
+ const uncertainRows=[rows[0],`OFFER|${number}|EU|used|250|EUR|unknown|${page}|Audi rear bumper`,`IMAGE|${number}|${image}|${page}|Rear bumper`];
+ const uncertainCandidate={groundingMetadata:{...rowCandidate.groundingMetadata,groundingSupports:uncertainRows.map(text=>({segment:{text},groundingChunkIndices:[0]}))}};
+ global.fetch=async()=>Response.json({candidates:[{...uncertainCandidate,content:{parts:[{text:uncertainRows.join('\n')}]}}]});
+ const uncertain=await geminiLookup(number);assert.equal(uncertain.reference_offers[0].price,250);assert.equal(uncertain.reference_offers[0].originality,'unconfirmed');assert.equal(uncertain.reference_offers[0].verified_original_oem,false);assert.equal(uncertain.offers.length,0,'unconfirmed original must not enter OEM averages');assert.equal(uncertain.photos_reference.length,1,'images do not depend on originality keywords');
  console.log('Enrichment evidence checks passed: multiline citations, image attribution, native prices and blocked-page fallback.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

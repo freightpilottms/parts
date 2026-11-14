@@ -1,4 +1,15 @@
 const plain=(s:unknown)=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[*_`]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+export function isAftermarket(value:unknown){return /aftermarket|replica|reproduction|replacement for|oem[- ]?(?:quality|style|equivalent)|oe[- ]?(?:quality|equivalent)|zamjensk|kopij|nachbau|not genuine|non[- ]?genuine|non[- ]?original|not original|neoriginal/.test(plain(value));}
+export function listingOriginality(proof:unknown,title:unknown):'original'|'unconfirmed'|'aftermarket'{
+ const combined=String(proof||'')+' '+String(title||'');
+ if(isAftermarket(combined))return 'aftermarket';
+ if(isGenuineOem(combined)||/^(?:oe|oem)(?: part| teil| dio)?$/i.test(String(proof||'').trim()))return 'original';
+ // Manufacturer or donor provenance is evidence too; no magic English keyword required.
+ const text=plain(proof);
+ const brand=/\b(?:audi|volkswagen|vw|vag|bmw|mercedes(?:-benz)?|skoda|seat|porsche|renault|peugeot|citroen|opel|volvo|fiat|ford)\b/;
+ if(brand.test(text)&&/(?:manufacturer|manufactured by|proizvodac|hersteller|producent|donor|removed from|dismantl|skinuto sa|skinuto s|demontaz|demontaz|factory fitted)/.test(text))return 'original';
+ return 'unconfirmed';
+}
 export function isGenuineOem(value:unknown){
  const s=plain(value);
  if(/aftermarket|replica|reproduction|replacement for|oem[- ]?(?:quality|style|equivalent)|oe[- ]?(?:quality|equivalent)|zamjensk|kopij|nachbau|zubeh[oö]r|not genuine|non[- ]?genuine/.test(s))return false;
@@ -22,6 +33,10 @@ export function verifiedOemOffer(offer:any,page:any){
  const genuine=isGenuineOem(description)||(authenticQuote.length>5&&plain(page.text).includes(plain(authenticQuote))&&isGenuineOem(authenticQuote));
  if(!genuine||/aftermarket|replica|reproduction|zamjensk|kopij/i.test(description))return false;
  if(/refurbished|remanufactured|damaged|broken|repaired|oštećen|ostecen|popravljen|defekt|beschädigt/i.test(description))return false;
+ return verifiedListingPrice(offer,page);
+}
+export function verifiedListingPrice(offer:any,page:any){
+ if(!page||!Number.isFinite(offer.price)||offer.price<=0)return false;
  const structured=page.structuredOffers||[];
  if(structured.some((o:any)=>o.price!=null)&&!structured.some((o:any)=>Number(o.price)===offer.price&&o.priceCurrency===offer.currency))return false;
  if(structured.some((o:any)=>Number(o.price)===offer.price&&o.priceCurrency===offer.currency&&conditionFrom(o.itemCondition)===offer.condition))return true;
