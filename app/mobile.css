@@ -79,3 +79,8 @@ footer{padding-bottom:12px}
  .password-screen .card{padding:22px;flex-shrink:0}
  footer{padding-bottom:12px}
 }
+
+/* Same action in add/edit: vertically aligned icon and label on all screens. */
+.internet-search-button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;line-height:1.2;padding:12px 16px;margin:12px 0;}
+.internet-search-button svg{flex-shrink:0;align-self:center;}
+.internet-search-button span{display:block;line-height:1.2;}

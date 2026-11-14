@@ -28,7 +28,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(!origin||origin!==expected)fail('Zahtjev nije dozvoljen s ove adrese.',403);
  if(!route.endsWith('/photos')&&!req.headers.get('content-type')?.startsWith('application/json'))fail('Očekivan JSON zahtjev.',415);
  }
- if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'market-rows-1',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
+ if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'full-search-2',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
  if(route==='login'&&method==='POST'){
  const input=z.object({username:z.string().trim().min(1).max(50),password:z.string().min(1).max(128)}).parse(await body(req));
  await rate('login-user:'+input.username.toLowerCase(),8,900);
@@ -51,7 +51,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash('1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
  }
- if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',true));}
+ if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',req.nextUrl.searchParams.get('mode')!=='full'));}
  if((route==='items'||route==='items/export')&&method==='GET'){
  const exporting=route==='items/export';
  const format=req.nextUrl.searchParams.get('format')||'xlsx';
@@ -79,9 +79,10 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify({...input.estimates,...(input.enrich_after_save?{_enrichment:{status:'pending',updated_at:new Date().toISOString()}}:{})}),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});if(input.enrich_after_save)after(()=>enrichItem(row.id));return json(row,201);
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='enrich'&&method==='POST'){
- const id=uuid.parse(path[1]);await rate('enrich:'+me.id,30,3600);
+ const id=uuid.parse(path[1]);const options=z.object({wait:z.boolean().default(false)}).parse(await body(req));await rate('enrich:'+me.id,30,3600);
  const r=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment}', COALESCE(estimates->'_enrichment','{}'::jsonb) || $2::jsonb) WHERE id=$1 AND (owner_id=$3 OR created_by=$3) AND (COALESCE(estimates->'_enrichment'->>'status','') NOT IN ('pending','running') OR (estimates->'_enrichment'->>'updated_at')::timestamptz < now()-interval '2 minutes') RETURNING id",[id,JSON.stringify({status:'pending',updated_at:new Date().toISOString()}),me.id]);
  if(!r.rows[0])fail('Obrada je vec u toku ili artikal nije kod vas.',409);
+ if(options.wait){await enrichItem(id,true);const item=(await db.query('SELECT id,estimates,sources FROM parts_app.items WHERE id=$1',[id])).rows[0];return json({ok:true,item});}
  after(()=>enrichItem(id,true));return json({ok:true},202);
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='owner'&&method==='POST'){
