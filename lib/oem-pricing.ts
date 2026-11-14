@@ -3,7 +3,7 @@ export function isGenuineOem(value:unknown){
  const s=plain(value);
  if(/aftermarket|replica|reproduction|replacement for|oem[- ]?(?:quality|style|equivalent)|oe[- ]?(?:quality|equivalent)|zamjensk|kopij|nachbau|zubeh[oö]r|not genuine|non[- ]?genuine/.test(s))return false;
  // An OEM reference number alone does not establish who manufactured the item.
- return /\bgenuine\b|\boriginal(?:ni|na|no|an|ne)?\b|originalteil|originalersatzteil|\boriginalni\b|\boriginalny\b|\borginal\b|\bfactory original\b/.test(s);
+ return /\bgenuine\b|\boriginal(?:ni|na|no|an|ne)?\b|originalteil|originalersatzteil|orygina[lł](?:ny|na|ne)?|\boriginalni\b|\boriginalny\b|\borginal\b|\bfactory original\b/.test(s);
 }
 export function conditionFrom(value:unknown):'new'|'used'|null{
  const s=plain(value);

@@ -30,5 +30,12 @@ global.fetch=async(url,options)=>Response.json({candidates:[JSON.parse(options.b
  assert.equal(result.offers.length,0,'unavailable exchange rate must not invent EUR');
  assert.equal(result.reference_offers[0].price,2999,'retain original price when FX unavailable');
  assert.equal(result.reference_offers[0].currency,'CZK');
+ const {parseMarketLines}=require('../lib/market-lines.ts');
+ const rows=[`IDENTITY|${number}|Zadnji branik|Audi A6 Avant|Zadnji branik`,`OFFER|${number}|EU|used|150.00|PLN|ORYGINAŁ|${page}|Audi A6 used original bumper`,`IMAGE|${number}|${image}|${page}|Audi A6 ${number}`];
+ const rowCandidate={groundingMetadata:{groundingChunks:[{web:{uri:source.url,title:source.title}}],groundingSupports:rows.map(text=>({segment:{text},groundingChunkIndices:[0]}))}};
+ const parsed=parseMarketLines(rows.join('\n'),rowCandidate,number,[source]);assert.equal(parsed.offers.length,1);assert.equal(parsed.images.length,1);
+ assert.equal(parseMarketLines(rows.join('\n'),{groundingMetadata:{}},number,[source]).offers.length,0,'uncited offer rejected');
+ let calls=0;global.fetch=async()=>{calls++;return Response.json({candidates:[{...rowCandidate,content:{parts:[{text:rows.join('\n')}]}}]});};
+ const fast=await geminiLookup(number);assert.equal(calls,1,'market rows do not require another AI extraction call');assert.equal(fast.reference_offers.length,1);assert.equal(fast.photos_reference[0],image);
  console.log('Enrichment evidence checks passed: multiline citations, image attribution, native prices and blocked-page fallback.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
