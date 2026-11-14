@@ -16,9 +16,11 @@ function Enrichment({item,onRetry,canRetry}:{item:Row,onRetry:()=>void,canRetry:
  const stale=pending&&Date.now()-Date.parse(meta.updated_at)>120000;
  return <section aria-label="Referentne slike i OEM cijene">
  {pending&&!stale&&<p className="info-box" role="status">Slike i OEM cijene se dopunjavaju u pozadini...</p>}
+ {meta?.status==='partial'&&<p className="info-box">{meta.missing_images&&meta.missing_prices?'Izvori su pronadeni, ali slike i cijene jos nisu potvrdene.':meta.missing_images?'Cijene su dopunjene. Referentna slika jos nije pronadena.':'Referentne slike su dopunjene. OEM cijene jos nisu potvrdene.'} Mozete ponoviti dopunu.</p>}
  {(meta?.status==='failed'||stale)&&<p className="info-box">Dopuna nije zavrsena. Artikal je sacuvan.</p>}
  {meta?.images?.length>0&&<ReferenceImage urls={meta.images} name={item.name}/>}
  <div className="estimate-grid">{[['EU_new','EU novo OEM'],['EU_used','EU polovno OEM'],['BIH_new','BiH novo OEM'],['BIH_used','BiH polovno OEM']].map(([key,label])=>{const value=item.estimates?.[key];return <div key={key}><span>{label}</span><strong>{value?money(value.value):pending&&!stale?'U obradi':'Nema podataka'}</strong>{value&&<small>{value.count} ponuda · {value.count===1?'orijentir':'prosjek uzorka'}</small>}{value?.warning&&<small>{value.warning}</small>}</div>;})}</div>
+ {meta?.offers?.length>0&&<details className="sources" open><summary>Pronadene OEM ponude ({meta.offers.length})</summary>{meta.offers.map((offer:Row,i:number)=><a key={i} href={offer.url} target="_blank" rel="noreferrer">{offer.market} · {offer.condition==='new'?'Novo OEM':'Polovno OEM'} · {Number(offer.price).toLocaleString('bs-BA')} {offer.currency}<ExternalLink size={13}/></a>)}<small>Cijene pojedinacnih oglasa u izvornoj valuti. KM prosjek prikazuje se kada je kurs dostupan.</small></details>}
  {item.sources?.length>0&&<details className="sources"><summary>Izvori i ponude</summary>{item.sources.map((s:Row,i:number)=><a key={i} href={s.url} target="_blank" rel="noreferrer">{s.title}<ExternalLink size={13}/></a>)}</details>}
  {canRetry&&(!pending||stale)&&<button className="secondary full" onClick={onRetry}><Search size={16}/> Dopuni slike i cijene</button>}
  </section>;

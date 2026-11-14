@@ -80,9 +80,9 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='enrich'&&method==='POST'){
  const id=uuid.parse(path[1]);await rate('enrich:'+me.id,30,3600);
- const r=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment}', $2::jsonb) WHERE id=$1 AND (owner_id=$3 OR created_by=$3) AND (COALESCE(estimates->'_enrichment'->>'status','') NOT IN ('pending','running') OR (estimates->'_enrichment'->>'updated_at')::timestamptz < now()-interval '2 minutes') RETURNING id",[id,JSON.stringify({status:'pending',updated_at:new Date().toISOString()}),me.id]);
+ const r=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment}', COALESCE(estimates->'_enrichment','{}'::jsonb) || $2::jsonb) WHERE id=$1 AND (owner_id=$3 OR created_by=$3) AND (COALESCE(estimates->'_enrichment'->>'status','') NOT IN ('pending','running') OR (estimates->'_enrichment'->>'updated_at')::timestamptz < now()-interval '2 minutes') RETURNING id",[id,JSON.stringify({status:'pending',updated_at:new Date().toISOString()}),me.id]);
  if(!r.rows[0])fail('Obrada je vec u toku ili artikal nije kod vas.',409);
- after(()=>enrichItem(id));return json({ok:true},202);
+ after(()=>enrichItem(id,true));return json({ok:true},202);
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='owner'&&method==='POST'){
  const id=uuid.parse(path[1]);const input=z.object({owner_id:uuid,expected_owner_id:uuid}).parse(await body(req));

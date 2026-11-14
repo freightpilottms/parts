@@ -1,4 +1,5 @@
 import https from 'node:https';
+import sharp from 'sharp';
 import {gunzipSync,brotliDecompressSync,inflateSync} from 'node:zlib';
 import {lookup} from 'node:dns/promises';
 import {BlockList,isIP} from 'node:net';
@@ -27,20 +28,26 @@ export function parseProductPage(html:string,url:string,number:string){
  const structuredOffers=product?[product.offers].flat().filter(Boolean):[];
  return {url,title:String(product?.name||title),description,text:text(html).slice(0,120000),images,structuredOffers};
 }
-export async function loadProductPage(url:string,number:string){
+async function loadPublicResource(url:string,image=false){
  const deadline=Date.now()+8000;
- async function get(current:string,redirects=0):Promise<{html:string,url:string}>{
+ async function get(current:string,redirects=0):Promise<{bytes:Buffer,url:string}>{
  const u=new URL(current);if(u.protocol!=='https:'||u.username||u.password||(u.port&&u.port!=='443')||isIP(u.hostname))throw Error('Unsupported address');
  const addresses=await lookup(u.hostname,{all:true});if(!addresses.length||addresses.some(a=>!publicAddress(a.address)))throw Error('Non-public address');
  const address=addresses[0];const remaining=deadline-Date.now();if(remaining<=0)throw Error('Page timeout');
  return new Promise((resolve,reject)=>{
- const req=https.get(u,{headers:{Accept:'text/html','Accept-Encoding':'gzip, br, deflate','User-Agent':'PartsInventory/1.0'},lookup:((_host:any,options:any,callback:any)=>{if(options?.all)callback(null,[address]);else callback(null,address.address,address.family);}) as any},res=>{
+ const req=https.get(u,{headers:{Accept:image?'image/avif,image/webp,image/*':'text/html','Accept-Encoding':'gzip, br, deflate','User-Agent':'PartsInventory/1.0'},lookup:((_host:any,options:any,callback:any)=>{if(options?.all)callback(null,[address]);else callback(null,address.address,address.family);}) as any},res=>{
  if(res.statusCode&&res.statusCode>=300&&res.statusCode<400&&res.headers.location){res.resume();if(redirects>=3)return reject(Error('Redirect limit'));get(new URL(res.headers.location,u).href,redirects+1).then(resolve,reject);return;}
- if(res.statusCode!==200||!String(res.headers['content-type']).includes('text/html')){res.resume();return reject(Error('Unavailable product page'));}
- let size=0;const chunks:Buffer[]=[];res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>1500000){req.destroy(Error('Page too large'));return;}chunks.push(chunk);});res.on('end',()=>{try{let bytes=Buffer.concat(chunks);const encoding=res.headers['content-encoding'];const options={maxOutputLength:3000000};if(encoding==='gzip')bytes=gunzipSync(bytes,options);else if(encoding==='br')bytes=brotliDecompressSync(bytes,options);else if(encoding==='deflate')bytes=inflateSync(bytes,options);else if(encoding&&encoding!=='identity')throw Error('Unsupported encoding');resolve({html:bytes.toString('utf8'),url:u.href});}catch(e){reject(e);}});res.on('error',reject);
+ if(res.statusCode!==200||!(image?String(res.headers['content-type']).startsWith('image/'):String(res.headers['content-type']).includes('text/html'))){res.resume();return reject(Error('Unavailable product page'));}
+ let size=0;const chunks:Buffer[]=[];res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>(image?3000000:1500000)){req.destroy(Error('Page too large'));return;}chunks.push(chunk);});res.on('end',()=>{try{let bytes=Buffer.concat(chunks);const encoding=res.headers['content-encoding'];const options={maxOutputLength:3000000};if(encoding==='gzip')bytes=gunzipSync(bytes,options);else if(encoding==='br')bytes=brotliDecompressSync(bytes,options);else if(encoding==='deflate')bytes=inflateSync(bytes,options);else if(encoding&&encoding!=='identity')throw Error('Unsupported encoding');resolve({bytes,url:u.href});}catch(e){reject(e);}});res.on('error',reject);
  });req.setTimeout(remaining,()=>req.destroy(Error('Page timeout')));req.on('error',reject);
  });
  }
  let timer:ReturnType<typeof setTimeout>|undefined;
- try{return await Promise.race([get(url).then(({html,url:resolved})=>parseProductPage(html,resolved,number)).catch(()=>null),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),8000);})]);}finally{clearTimeout(timer);}
+ try{return await Promise.race([get(url).catch(()=>null),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),8000);})]);}finally{clearTimeout(timer);}
+}
+
+export async function loadProductPage(url:string,number:string){const result=await loadPublicResource(url);return result?parseProductPage(result.bytes.toString('utf8'),result.url,number):null;}
+export async function loadReferenceImage(url:string){
+ const result=await loadPublicResource(url,true);if(!result)return null;
+ try{const info=await sharp(result.bytes,{limitInputPixels:40000000}).metadata();return info.width&&info.height&&info.width>=160&&info.height>=100&&['jpeg','png','webp','avif','heif'].includes(info.format||'')?result.url:null;}catch{return null;}
 }

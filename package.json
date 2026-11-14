@@ -9,7 +9,7 @@
     "db:setup": "node --env-file=.env.local scripts/setup.mjs",
     "check": "tsc --noEmit",
     "dev:preview": "node --env-file=.env.local scripts/preview.mjs",
-    "test": "node tests/integration.cjs && node tests/lookup.cjs && node tests/pricing.cjs"
+    "test": "node tests/integration.cjs && node tests/lookup.cjs && node tests/pricing.cjs && node tests/enrichment-evidence.cjs"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,34 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),Module=require('node:module'),ts=require('typescript');
+require.extensions['.ts']=(m,file)=>m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
+const original=Module._load;
+Module._load=function(id,parent,main){
+ if(id==='./product-page')return {loadProductPage:async()=>null,loadReferenceImage:async()=>null};
+ if(id==='./exchange')return {euroRates:async()=>null};
+ return original.call(this,id,parent,main);
+};
+const {geminiLookup,groundedImageCandidates,productLinksForSource}=require('../lib/gemini-lookup.ts');
+const {quoteHasPrice,isGenuineOem,conditionFrom}=require('../lib/oem-pricing.ts');
+process.env.GEMINI_API_KEY='test';
+const number='4G9807511P',page='https://seller.example/product/4g9807511p',image='https://cdn.example/bumper.jpg';
+const source={index:0,title:'seller.example',url:'https://vertexaisearch.cloud.google.com/redirect/example'};
+const imageBlock=`OEM: ${number} | Tip: product\nIzvor: ${page}\nURL: ${image}`;
+const support={segment:{text:'URL: '+image},groundingChunkIndices:[0]};
+const offerBlock=`OEM: ${number}\nCijena: 2 999 Kč\nOriginál VAG\nPoužité zboží`;
+const evidence=`${number} Zadnji branik Audi A6 Avant\n${offerBlock}\n${imageBlock}`;
+const extracted={matched_number:number,identity_quote:`${number} Zadnji branik Audi A6 Avant`,name:'Zadnji branik',vehicle:'Audi A6 Avant',category:'Zadnji branik',images:[],offers:[{market:'EU',condition:'used',price:2999,currency:'CZK',source_index:0,evidence_quote:offerBlock.replace(/\n/g,'\\n'),originality_quote:'Originál VAG',condition_quote:'Použité zboží',price_quote:'2 999 Kč'}]};
+global.fetch=async(url,options)=>Response.json({candidates:[JSON.parse(options.body).tools?{content:{parts:[{text:evidence}]},groundingMetadata:{groundingChunks:[{web:{uri:source.url,title:source.title}}],groundingSupports:[support]}}:{content:{parts:[{text:JSON.stringify(extracted)}]}}]});
+(async()=>{
+ assert.equal(quoteHasPrice('2 999 Kč',2999),true);assert.equal(quoteHasPrice('€ 363,00',363),true);assert.equal(quoteHasPrice('€ 1.299,50',1299.5),true);
+ assert.equal(isGenuineOem('Originál VAG'),true);assert.equal(conditionFrom('Použité zboží'),'used');assert.equal(isGenuineOem('original aftermarket'),false);
+ assert.deepEqual(productLinksForSource(source,imageBlock,number),[page]);
+ assert.deepEqual(groundedImageCandidates(imageBlock,[source],[support],number),[image]);
+ assert.deepEqual(groundedImageCandidates(imageBlock,[source],[],number),[]);
+ assert.deepEqual(groundedImageCandidates(imageBlock.replace(number,number+'A'),[source],[support],number),[]);
+ assert.deepEqual(groundedImageCandidates(imageBlock,[source],[{...support,groundingChunkIndices:[9]}],number),[]);
+ const result=await geminiLookup(number);
+ assert.equal(result.verified,true);assert.deepEqual(result.photos_reference,[image]);
+ assert.equal(result.offers.length,0,'unavailable exchange rate must not invent EUR');
+ assert.equal(result.reference_offers[0].price,2999,'retain original price when FX unavailable');
+ assert.equal(result.reference_offers[0].currency,'CZK');
+ console.log('Enrichment evidence checks passed: multiline citations, image attribution, native prices and blocked-page fallback.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

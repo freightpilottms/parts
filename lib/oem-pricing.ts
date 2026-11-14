@@ -1,16 +1,19 @@
-const plain=(s:unknown)=>String(s||'').normalize('NFKC').replace(/[*_`]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+const plain=(s:unknown)=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[*_`]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
 export function isGenuineOem(value:unknown){
  const s=plain(value);
  if(/aftermarket|replica|reproduction|replacement for|oem[- ]?(?:quality|style|equivalent)|oe[- ]?(?:quality|equivalent)|zamjensk|kopij|nachbau|zubeh[oö]r|not genuine|non[- ]?genuine/.test(s))return false;
  // An OEM reference number alone does not establish who manufactured the item.
- return /\bgenuine\b|\boriginal(?:ni|na|no|an|ne)?\b|originalteil|originalersatzteil|\bfactory original\b/.test(s);
+ return /\bgenuine\b|\boriginal(?:ni|na|no|an|ne)?\b|originalteil|originalersatzteil|\boriginalni\b|\boriginalny\b|\borginal\b|\bfactory original\b/.test(s);
 }
 export function conditionFrom(value:unknown):'new'|'used'|null{
  const s=plain(value);
  if(/refurb|remanufact|repair|damaged|broken|repaired|ostec|ošteć|poprav|obnovljen|defekt|besch[aä]digt/.test(s))return null;
- const used=/\bused\b|usedcondition|\bpolovn|\bpolovan|kori[sš][tć]|gebraucht|occasion/.test(s);
- const fresh=/\bnew\b|newcondition|\bnov[oa]?\b|\bneu\b|brand new|new old stock/.test(s);
+ const used=/\bused\b|usedcondition|\bpolovn|\bpolovan|kori[sš][tć]|gebraucht|occasion|pouzity|pouzite|uzywany|uzywane/.test(s);
+ const fresh=/\bnew\b|newcondition|\bnov[oa]?\b|\bneu\b|\bneuteil\b|\bnovy\b|\bnove\b|\bnowy\b|\bnowe\b|brand new|new old stock/.test(s);
  return used===fresh?null:used?'used':'new';
+}
+export function quoteHasPrice(value:unknown,price:number){
+ const amounts=(String(value||'').match(/\d[\d\s.,]*/g)||[]).map(v=>{let n=v.replace(/\s/g,'').replace(/[.,]+$/,'');if(n.includes(',')&&n.includes('.'))n=n.lastIndexOf(',')>n.lastIndexOf('.')?n.replace(/\./g,'').replace(',','.'):n.replace(/,/g,'');else n=n.replace(',','.');return Number(n);});return amounts.includes(price);
 }
 export function verifiedOemOffer(offer:any,page:any){
  if(!page||!Number.isFinite(offer.price)||offer.price<=0)return false;
