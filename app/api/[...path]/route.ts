@@ -28,7 +28,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(!origin||origin!==expected)fail('Zahtjev nije dozvoljen s ove adrese.',403);
  if(!route.endsWith('/photos')&&!req.headers.get('content-type')?.startsWith('application/json'))fail('Očekivan JSON zahtjev.',415);
  }
- if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'oem-provenance-3',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
+ if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'bih-currency-4',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
  if(route==='login'&&method==='POST'){
  const input=z.object({username:z.string().trim().min(1).max(50),password:z.string().min(1).max(128)}).parse(await body(req));
  await rate('login-user:'+input.username.toLowerCase(),8,900);
@@ -63,7 +63,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const vals=[q,normalize(q)||'__',status,cat,owner];
  const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT ${exporting?20001:30} OFFSET $6`,[...vals,exporting?0:(page-1)*30]);
  if(exporting){
- if(rows.rows.length>20000)fail('Izvoz je ogranicen na 20.000 artikala. Suzite filtere.',413);
+ if(rows.rows.length>20000)fail('Izvoz je ograničen na 20.000 artikala. Suzite filtere.',413);
  const filename='parts-skladiste-'+new Date().toISOString().slice(0,10);
  const scope=[status==='all'?'Svi artikli':status==='sold'?'Prodani artikli':'Dostupni artikli',cat,q?'Pretraga: '+q:'',owner?'Korisnik: '+(rows.rows[0]?.owner||'odabrani'):'Svi korisnici'].filter(Boolean).join(' / ');
  const content=format==='xlsx'?new Uint8Array(inventoryXlsx(rows.rows)):format==='csv'?inventoryCsv(rows.rows):inventoryPrint(rows.rows,scope);
@@ -81,13 +81,13 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(path.length===3&&path[0]==='items'&&path[2]==='enrich'&&method==='POST'){
  const id=uuid.parse(path[1]);const options=z.object({wait:z.boolean().default(false)}).parse(await body(req));await rate('enrich:'+me.id,30,3600);
  const r=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment}', COALESCE(estimates->'_enrichment','{}'::jsonb) || $2::jsonb) WHERE id=$1 AND (owner_id=$3 OR created_by=$3) AND (COALESCE(estimates->'_enrichment'->>'status','') NOT IN ('pending','running') OR (estimates->'_enrichment'->>'updated_at')::timestamptz < now()-interval '2 minutes') RETURNING id",[id,JSON.stringify({status:'pending',updated_at:new Date().toISOString()}),me.id]);
- if(!r.rows[0])fail('Obrada je vec u toku ili artikal nije kod vas.',409);
+ if(!r.rows[0])fail('Obrada je već u toku ili artikal nije kod vas.',409);
  if(options.wait){await enrichItem(id,true);const item=(await db.query('SELECT id,estimates,sources FROM parts_app.items WHERE id=$1',[id])).rows[0];return json({ok:true,item});}
  after(()=>enrichItem(id,true));return json({ok:true},202);
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='owner'&&method==='POST'){
  const id=uuid.parse(path[1]);const input=z.object({owner_id:uuid,expected_owner_id:uuid}).parse(await body(req));
- if(input.owner_id!==me.id)fail('Objavljeni artikal mozete oznaciti samo kod sebe.',403);
+ if(input.owner_id!==me.id)fail('Objavljeni artikal možete označiti samo kod sebe.',403);
  await transaction(async c=>{
  const previous=(await c.query('SELECT owner_id,status FROM parts_app.items WHERE id=$1 FOR UPDATE',[id])).rows[0];
  if(!previous)fail('Artikal ne postoji.',404);

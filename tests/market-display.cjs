@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript');
+require.extensions['.ts']=(m,file)=>m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,file);
+const {marketAmount,marketMoney,categoryLabel}=require('../lib/market-display.ts');
+assert.equal(marketAmount(195.583,'BAM','EU'),100);
+assert.equal(marketAmount(100,'EUR','BIH'),195.583);
+assert.equal(marketAmount(400,'PLN','EU',4),100);
+assert.equal(marketAmount(400,'PLN','BIH',4),195.583);
+assert.equal(marketAmount(400,'PLN','EU'),null);
+assert.equal(marketAmount(0,'EUR','EU'),0);
+assert.ok(marketMoney(100,'EU').endsWith(' \u20ac'));
+assert.ok(marketMoney(100,'BIH').endsWith(' KM'));
+assert.equal(categoryLabel('Lijeva zadnja stopka'),'Lijeva zadnja \u0161topka');
+const page=fs.readFileSync('app/page.tsx','utf8');assert.ok(page.includes('Pretra\u017ei Internet'));assert.ok(!/Pretrazi|Skladiste|Korisnicko|\ufffd|\u0012/.test(page));
+console.log('Market display checks passed: EUR/KM conversion, FX unavailable, zero, diacritics and legacy category labels.');

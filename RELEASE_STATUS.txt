@@ -1,40 +1,11 @@
-Parts release
-
-Search update: normalized OEM input and cache keys; compact/lowercase/spaced/hyphenated variants are equivalent. Full suffix is retained.
-Gemini first performs cited web research in plain text, then extracts structured fields from that evidence. Search-only retry when grounding is absent. No fake prices; missing prices do not prevent part identification. Unconfirmed results are not cached.
-Includes Ostali dijelovi, mobile fixes and XLSX/CSV/print exports.
-Validation: production build, TypeScript, 49 integration checks and dedicated lookup checks. Live Gemini research and extraction returned rear bumper for 4G9807511P with sources and offers.
-This source update must be deployed; no credentials included.
-
-Assignment update: all visible users selectable at creation; existing available items can only be assigned to the signed-in user. Sold items cannot be reassigned. Sale remains restricted to current holder. Atomic ownership changes with audit and stale-edit protection. TypeScript and 59 integration checks plus lookup checks pass.
-
-Reference/name update: preserve exact component names independently from category; rank up to 3 source-backed exact-OEM image candidates, product photos first; clickable reference image dialog with 100-400% zoom, wheel, pinch, pan and reset. Broken image fallback. New cache version, concurrent lookup deduplication, shorter bounded research, explicit internet refresh for database/cache results.
-Validation: production build, TypeScript, 59 integration checks and lookup tests pass. Live Gemini test 4g9807511p: 24.18s, verified identification, 7 sources, 3 image candidates. Specific bracket OEM was not supplied. Source update not deployed.
-
-Strict OEM/image update: offers require genuine-original and explicit new/used evidence from exact-OEM product pages; aftermarket/ambiguous/damaged offers excluded. New/used remain independent; inversion warning shown. One verified offer is labelled an orientation point. Internet images now come only from structured Product image or exact-OEM product Open Graph metadata, not generated image URLs. Product page requests restrict private addresses, pin DNS, limit redirects/body/time. Unreadable or unmatched pages yield no images/prices. Old lookup cache invalidated and legacy unverified stored estimates omitted on lookup.
-Build and tests pass. Live sample product page could not be verified in this environment; omitted rather than displayed. Changes await deployment.
-
-2026-11-13: Two-stage lookup supersedes synchronous lookup above. Initial Gemini search identifies name/model only, using a single grounded response when labelled fields are available. Index-first lookup and separate identity/full-result caches retained. Publishing persists pending enrichment, then Next after performs server-side image/OEM price enrichment. Atomic claims, authenticated rate-limited retry, stalled-job recovery, UI polling, reference zoom and detail estimates. No schema migration. User-entered identity, ownership, selling price, status and uploaded photos remain intact.
-Product pages support bounded gzip/br/deflate decoding and exact-OEM Product names. When seller HTML is inaccessible, grounded offers with explicit quoted originality/condition/price can be retained; readable pages remain authoritative. No guessed image URLs or invented prices.
-Validation: 67 SQL/API integration checks plus lookup and pricing checks; production build passed. Live Gemini identity check for lowercase 4g9807511p succeeded in one call. Full enrichment verified with deterministic tests; availability of real offers/images depends on sources. Deployment pending. No secrets included.
-
-2026-11-13 evidence recovery update:
-- Fix decimal commas, thousands separators, escaped-newline quotations and Czech/Polish original/used terminology.
-- Preserve verified native-currency offers even if ECB currency conversion is unavailable; list source prices and links in details. EUR/BAM estimates remain source-backed only.
-- Prefer exact-OEM direct product URLs from cited domains alongside grounding redirects. Recover multiline image evidence tied to the exact OEM header and the matching grounding source. Verified page images first; cited image candidates can load in the browser when server fetching is blocked. Broken candidates use existing viewer fallback.
-- Manual retry bypasses cache. New cache namespace; empty results are not cached. Empty enrichment reports partial, not complete. Preserve previous reference images during retry/failure and enrich duplicate inventory entries too.
-Validation: production build passed. Recorded real Gemini response replay retained two native-currency offers (CZK/GBP) and three source-attributed image candidates previously discarded. Seller-page/image connectivity and live DB access were blocked in this local environment; browser display on production remains to be checked after deployment. No database migration required. This source update is not deployed. No credentials included.
-
-Market rows revision (lookup_version: market-rows-1):
-Verified the previous release is live on dijelovi.vercel.app; health reports Supabase OK. This new revision is not yet deployed.
-Simplified grounded market research into directly parsed rows, avoiding the second AI extraction call when rows are available. Per-row grounding/source checks, exact suffix checks, explicit originality and new/used separation retained. Recognizes Polish ORYGINAL/ORYGINAŁ. Product image rows accept exact-OEM product titles as well as the literal product label. Cache version v7-market. Native-currency price averages now display in main estimate cards while exchange rates are unavailable. Refreshed reference viewers reset failed-image state. Specific failure reason and engine marker retained with enrichment.
-Validation: 70 integration checks and lookup/pricing/evidence tests passed; production build passed. Live research for 4G9807511P returned 4 Polish original used offers and 3 cited image URLs in one Gemini call. Reprocessing this recorded response with the corrected parser retained offers/images. Direct image fetches timed out in this environment; actual browser image display on production is NOT confirmed. No schema changes or credentials in release.
-
-Full manual internet search fix (health lookup_version: full-search-2):
-The add-item refresh button previously called identity-only lookup, so it could not return prices/images. It now explicitly calls full lookup with refresh=1 and mode=full. The button is always available before publication, labelled Pretrazi Internet, with vertically centered icon/text and busy state. Draft and saved item market results use the same renderer, including native currency offers.
-Saved-item Pretrazi Internet calls authenticated enrichment with wait=true; API completes enrichment and returns saved estimates/sources directly into the open item dialog. Automatic enrichment after publish remains background-based. Original owner/creator authorization, rate limits and duplicate-job protection remain unchanged. No schema changes. This update awaits deployment.
-Validation: 73 integration checks plus lookup/pricing/evidence tests and TypeScript passed. Regression checks cover identity vs full route mode, fresh internet lookup and synchronous saved-item result delivery. Production image display still requires verification after deployment.
-
-OEM provenance revision (lookup_version: oem-provenance-3):
-OEM is factory-original provenance, not mandatory wording in an advert. Manufacturer and donor-vehicle evidence accepted. Exact-number offers without established originality are retained as clearly labelled reference offers and excluded from verified OEM averages/inventory valuation. Explicit aftermarket/replicas remain excluded. Both direct market rows and fallback extraction follow this distinction. Images do not depend on originality words; a cited exact-number product page can establish the reference even when image caption omits the number. New v8-provenance cache key. Button spelling corrected to Pretraži Internet in add and saved-item views.
-Validation: live Gemini lookup for 4G9807511P returned seven priced offers (original/unknown provenance separately) and three cited image links. Price extraction/unknown-provenance exclusion regression tests and 73 integration checks pass. Production build passes. Actual loading of external image bytes on production remains unverified. This source revision awaits deployment; no database migration or credentials included.
+Parts release: bih-currency-4
+EU market prices displayed in EUR; BiH in KM. Stored inventory estimates remain BAM.
+Targeted BiH search when broad results contain no local price rows; bounded supplementary request.
+Ungrounded retry retains price/image research rather than degrading to identity only.
+Bosnian diacritics corrected across UI, errors, exports and AI instructions.
+Legacy category values preserved; display labels include proper diacritics.
+New currency/local-source tests included. No database migration or new environment variable required.
+Live Gemini test for 4G0823029A returned a BiH reference offer, EU offers and reference image URLs.
+Original provenance of the BiH offer is unconfirmed and excluded from verified OEM averages.
+No confirmed price for 4G0823029D. A results must not be treated as D compatibility evidence.
+Deployment: this release has not been published to Vercel by this session.

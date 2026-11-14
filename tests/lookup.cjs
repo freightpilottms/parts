@@ -36,10 +36,10 @@ const extracted={matched_number:number,identity_quote:evidence.split('\n')[0],na
  assert.ok(body.contents[0].parts[0].text.includes(number));
  if(body.tools){assert.ok(body.contents[0].parts[0].text.includes('4G9 807 511 P'));return Response.json({candidates:[{content:{parts:[{text:evidence}]},groundingMetadata:{groundingChunks:[{web:{uri:sources[0].url,title:sources[0].title}}]}}]});}
  return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(extracted)}]}}]});};
- const [first,parallel]=await Promise.all([lookup('4g9807511p'),lookup('4G9 807 511 P')]);assert.equal(first,parallel);assert.equal(first.name,'Zadnji branik');assert.equal(first.estimates.EU_used.value,488.96);assert.equal(requests,2);
- const again=await lookup('4G9 807 511 P');assert.equal(again.origin,'cache');assert.equal(requests,2);
- const identity=await lookup(number,false,true);assert.equal(identity.name,'Zadnji branik');assert.deepEqual(identity.estimates,{});assert.equal(identity.photo,null);assert.equal(identity.enrich_after_save,true);assert.equal(requests,4);
- const identityCached=await lookup('4g9 807 511 p',false,true);assert.equal(identityCached.origin,'cache');assert.equal(requests,4);
+ const [first,parallel]=await Promise.all([lookup('4g9807511p'),lookup('4G9 807 511 P')]);assert.equal(first,parallel);assert.equal(first.name,'Zadnji branik');assert.equal(first.estimates.EU_used.value,488.96);assert.equal(requests,3);
+ const again=await lookup('4G9 807 511 P');assert.equal(again.origin,'cache');assert.equal(requests,3);
+ const identity=await lookup(number,false,true);assert.equal(identity.name,'Zadnji branik');assert.deepEqual(identity.estimates,{});assert.equal(identity.photo,null);assert.equal(identity.enrich_after_save,true);assert.equal(requests,5);
+ const identityCached=await lookup('4g9 807 511 p',false,true);assert.equal(identityCached.origin,'cache');assert.equal(requests,5);
  cache.clear();requests=0;
  global.fetch=async()=>{requests++;return Response.json({candidates:[{content:{parts:[{text:'Unverified suggestion'}]}}]});};
  const none=await lookup(number);assert.equal(none.name,'');assert.deepEqual(none.estimates,{});assert.equal(cache.size,0);assert.equal(requests,2);

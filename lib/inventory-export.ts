@@ -1,9 +1,10 @@
+import {categoryLabel} from './market-display';
 import {zipSync,strToU8} from 'fflate';
 
 const columns=['Broj dijela','Naziv','Vozilo','Kategorija','Boja','Korisnik','Status','Cijena (KM)','Prodano za (KM)'];
 const widths=[23,32,35,24,18,20,16,18,21];
 const escape=(value:unknown)=>String(value??'').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!));
-function values(row:Record<string,any>){return [row.part_number,row.name,row.vehicle,row.category,row.color,row.owner,row.status==='sold'?'Prodano':'Dostupno',Number(row.price),row.status==='sold'?Number(row.sold_price):''];}
+function values(row:Record<string,any>){return [row.part_number,row.name,row.vehicle,categoryLabel(row.category),row.color,row.owner,row.status==='sold'?'Prodano':'Dostupno',Number(row.price),row.status==='sold'?Number(row.sold_price):''];}
 export function inventoryCsv(rows:Record<string,any>[]){
  const cell=(v:unknown)=>'"'+(typeof v==='string'&&/^[\s]*[=+@\-]/.test(v)?"'"+v:String(v??'')).replace(/"/g,'""')+'"';
  return '\uFEFF'+[columns,...rows.map(values)].map(row=>row.map(cell).join(';')).join('\r\n');
