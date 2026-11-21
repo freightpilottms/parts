@@ -1,11 +1,12 @@
-Parts release: bih-currency-4
-EU market prices displayed in EUR; BiH in KM. Stored inventory estimates remain BAM.
-Targeted BiH search when broad results contain no local price rows; bounded supplementary request.
-Ungrounded retry retains price/image research rather than degrading to identity only.
-Bosnian diacritics corrected across UI, errors, exports and AI instructions.
-Legacy category values preserved; display labels include proper diacritics.
-New currency/local-source tests included. No database migration or new environment variable required.
-Live Gemini test for 4G0823029A returned a BiH reference offer, EU offers and reference image URLs.
-Original provenance of the BiH offer is unconfirmed and excluded from verified OEM averages.
-No confirmed price for 4G0823029D. A results must not be treated as D compatibility evidence.
-Deployment: this release has not been published to Vercel by this session.
+Parts release: quick-entry-5
+Quick entry: part name and vehicle first; selling price focused at the top.
+Item details, user assignment, manual internet search and photos remain available in expandable sections.
+Images and market prices are enriched after publication; they are not required to save.
+Identity parsing accepts labelled, inline and pipe-separated answers without another AI extraction call.
+Identity lookup reuses recent full-research cache results; exact suffix and source requirements remain.
+Identity-only research is explicitly used by the main search. GPT fallback also omits market research in identity mode.
+Live Gemini identity test: 4G9807511P, 11.123 seconds, one AI call, Zadnji branik, Audi A6 C7 Avant / Karavan (2011-2014), four sources.
+Timing is a single live measurement, not a latency guarantee.
+All automated tests passed, including 73 API/SQL integration checks, cache reuse, identity parsing, pricing and currency checks.
+Production build passed. No database migration or new environment variable is required.
+This package has not been deployed to Vercel in this session.

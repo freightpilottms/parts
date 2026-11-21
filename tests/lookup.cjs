@@ -38,8 +38,15 @@ const extracted={matched_number:number,identity_quote:evidence.split('\n')[0],na
  return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(extracted)}]}}]});};
  const [first,parallel]=await Promise.all([lookup('4g9807511p'),lookup('4G9 807 511 P')]);assert.equal(first,parallel);assert.equal(first.name,'Zadnji branik');assert.equal(first.estimates.EU_used.value,488.96);assert.equal(requests,3);
  const again=await lookup('4G9 807 511 P');assert.equal(again.origin,'cache');assert.equal(requests,3);
- const identity=await lookup(number,false,true);assert.equal(identity.name,'Zadnji branik');assert.deepEqual(identity.estimates,{});assert.equal(identity.photo,null);assert.equal(identity.enrich_after_save,true);assert.equal(requests,5);
- const identityCached=await lookup('4g9 807 511 p',false,true);assert.equal(identityCached.origin,'cache');assert.equal(requests,5);
+ const identity=await lookup(number,false,true);assert.equal(identity.name,'Zadnji branik');assert.deepEqual(identity.estimates,{});assert.equal(identity.photo,null);assert.equal(identity.enrich_after_save,true);assert.equal(requests,3);
+ assert.equal(identity.origin,'cache','quick entry reuses identity from full cached research');
+ const identityCached=await lookup('4g9 807 511 p',false,true);assert.equal(identityCached.origin,'cache');assert.equal(requests,3);
+ let quickCalls=0;
+ global.fetch=async(url,options)=>{quickCalls++;const body=JSON.parse(options.body);assert.ok(body.tools,'identity uses grounded search');assert.equal(body.generationConfig.maxOutputTokens,450);return Response.json({candidates:[{content:{parts:[{text:labelled}]},groundingMetadata:{groundingChunks:[{web:{uri:sources[0].url,title:sources[0].title}}]}}]});};
+ const quick=await require('../lib/gemini-lookup.ts').geminiLookup(number,true);assert.equal(quick.name,'Zadnji branik');assert.equal(quickCalls,1,'formatted identity needs only one AI call and no price/image requests');assert.deepEqual(quick.offers,[]);assert.deepEqual(quick.photos_reference,[]);
+ assert.equal(parseIdentityLines(labelled.replaceAll('\n','; '),number,sources).vehicle,'Audi A6 Avant');
+ assert.equal(parseIdentityLines('IDENTITY|'+number+'|Zadnji branik|Audi A6 Avant|Zadnji branik',number,sources).name,'Zadnji branik');
+ assert.equal(parseIdentityLines(labelled.replace('Audi A6 Avant','unknown'),number,sources),null);
  cache.clear();requests=0;
  global.fetch=async()=>{requests++;return Response.json({candidates:[{content:{parts:[{text:'Unverified suggestion'}]}}]});};
  const none=await lookup(number);assert.equal(none.name,'');assert.deepEqual(none.estimates,{});assert.equal(cache.size,0);assert.equal(requests,2);

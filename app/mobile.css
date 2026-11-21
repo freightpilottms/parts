@@ -84,3 +84,5 @@ footer{padding-bottom:12px}
 .internet-search-button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;line-height:1.2;padding:12px 16px;margin:12px 0;}
 .internet-search-button svg{flex-shrink:0;align-self:center;}
 .internet-search-button span{display:block;line-height:1.2;}
+
+.quick-part-summary{display:grid;gap:5px;margin:16px 0;overflow-wrap:anywhere}.quick-part-summary strong{font-size:20px}.quick-part-summary span,.quick-part-summary small{color:var(--muted)}.add-options{border-top:1px solid var(--line);padding:12px 0}.add-options>summary{cursor:pointer;font-weight:600;padding:8px 0}.add-options[open]>summary{margin-bottom:12px}
