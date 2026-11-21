@@ -86,3 +86,32 @@ footer{padding-bottom:12px}
 .internet-search-button span{display:block;line-height:1.2;}
 
 .quick-part-summary{display:grid;gap:5px;margin:16px 0;overflow-wrap:anywhere}.quick-part-summary strong{font-size:20px}.quick-part-summary span,.quick-part-summary small{color:var(--muted)}.add-options{border-top:1px solid var(--line);padding:12px 0}.add-options>summary{cursor:pointer;font-weight:600;padding:8px 0}.add-options[open]>summary{margin-bottom:12px}
+
+/* Keep the title and actions visible while long forms scroll inside the dialog. */
+.modal-shell[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.modal-shell > form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.modal-shell .modal-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.modal-shell .modal-head, .modal-shell .modal-actions { flex-shrink: 0; }
+@media (max-width:760px) {
+  .modal-shell .field input, .modal-shell .field select { font-size:16px; }
+  .modal-shell .modal-actions { padding-bottom:max(12px,env(safe-area-inset-bottom)); }
+}
+
+html:has(dialog[open]), body:has(dialog[open]) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html { scrollbar-gutter: stable; }

@@ -32,11 +32,24 @@ try{
  check((await call('items',{name:'bad'})).status===400,'invalid item denied');
  const item={part_number:'4G0 807-065',name:'Prednji branik',vehicle:'Audi A6 C7',color:'Crna',category:'Prednji branik',owner_id:me.id,price:220,estimates:{BIH_used:{value:200,count:2}},sources:[]};
  const created=await call('items',item);check(created.status===201,'publish item');const id=created.body.id;
- const image=await require('sharp')({create:{width:16,height:16,channels:3,background:'#157b55'}}).png().toBuffer();
+ const image=await require('sharp')({create:{width:800,height:600,channels:3,background:'#157b55'}}).png().toBuffer();
  let photo;
  for(let i=0;i<3;i++){const form=new FormData();form.append('photo',new File([image],'test.png',{type:'image/png'}));const r=await call('items/'+id+'/photos',form);check(r.status===201,'photo '+(i+1)+' accepted');photo=r.body.id;}
  const fourth=new FormData();fourth.append('photo',new File([image],'test.png',{type:'image/png'}));check((await call('items/'+id+'/photos',fourth)).status===409,'fourth photo rejected');
- const img=await call('photos/'+photo);check(img.status===200&&img.res.headers.get('content-type')==='image/webp','authenticated optimized image');
+ const img=await call('photos/'+photo);check(img.status===200&&img.res.headers.get('content-type')==='image/jpeg'&&Buffer.from(img.body).readUInt16BE(0)===0xffd8,'authenticated optimized image');
+ const thumb=await call('photos/'+photo+'?size=thumb');
+ const thumbInfo=await require('sharp')(Buffer.from(thumb.body)).metadata();
+ check(thumbInfo.format==='jpeg'&&thumbInfo.width===240&&thumb.body.byteLength<img.body.byteLength,'table thumbnail is a smaller JPEG');
+ const cachedPhoto=await call('photos/'+photo+'?size=thumb',undefined,{headers:{'if-none-match':thumb.res.headers.get('etag')}});
+ check(cachedPhoto.status===304,'signed-in repeat request skips photo payload');
+ const jpg=await call('photos/'+photo+'?download=1');
+ check(jpg.res.headers.get('content-disposition').includes('.jpg"'),'download matches JPEG format');
+ const oldWebp=await require('sharp')(image).webp().toBuffer();
+ const legacyPhoto=(await pool.query("INSERT INTO parts_app.photos(item_id,bytes,mime) VALUES($1,$2,'image/webp') RETURNING id",[id,oldWebp])).rows[0].id;
+ const legacySmall=await call('photos/'+legacyPhoto+'?size=thumb');
+ check(legacySmall.res.headers.get('content-type')==='image/jpeg'&&(await pool.query('SELECT thumbnail IS NOT NULL AS ready FROM parts_app.photos WHERE id=$1',[legacyPhoto])).rows[0].ready,'legacy thumbnail generated and stored');
+ check((await call('photos/'+legacyPhoto)).res.headers.get('content-type')==='image/webp','legacy full photo remains readable');
+ await pool.query('DELETE FROM parts_app.photos WHERE id=$1',[legacyPhoto]);
  const found=await call('lookup?number=4g0807065');check(found.body.origin==='database'&&found.body.vehicle==='Audi A6 C7','normalized index-first lookup');
  check((await call('items/'+id+'/sell',{price:-1})).status===400,'negative sale rejected');
  const sales=await Promise.all([call('items/'+id+'/sell',{price:0}),call('items/'+id+'/sell',{price:0})]);check(sales.filter(r=>r.status===200).length===1&&sales.filter(r=>r.status===409).length===1,'concurrent sale: exactly one wins; zero accepted');

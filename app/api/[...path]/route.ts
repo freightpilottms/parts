@@ -16,6 +16,10 @@ const uuid=z.string().uuid();
 const safeLink=z.url().refine(v=>v.startsWith('https://'));
 const offerSchema=z.object({market:z.enum(['EU','BIH']),condition:z.enum(['new','used']),price:amount,currency:z.enum(['EUR','BAM']),url:safeLink});
 const partSchema=z.object({enrich_after_save:z.boolean().default(false),part_number:z.string().trim().min(3).max(60).refine(v=>normalize(v).length>=3),name:z.string().trim().min(2).max(180),vehicle:z.string().trim().min(2).max(250),category:z.enum(categories),color:z.string().trim().max(60),owner_id:uuid,price:amount,estimates:z.partialRecord(z.enum(['EU_new','EU_used','BIH_new','BIH_used']),z.object({value:amount,count:z.number().int().min(0).max(1000),offers:z.array(offerSchema).max(100).optional(),basis:z.literal('verified_original_oem').optional(),confidence:z.enum(['single_offer','sample_average']).optional(),warning:z.string().max(200).optional()}).optional()).default({}),sources:z.array(z.object({title:z.string().max(200),url:safeLink})).max(12).default([])});
+function makeThumbnail(bytes:Buffer){
+ return sharp(bytes).resize(240,240,{fit:'inside',withoutEnlargement:true})
+  .flatten({background:'#ffffff'}).jpeg({quality:75}).toBuffer();
+}
 function fail(message:string,status=400):never{throw Object.assign(Error(message),{status});}
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'no-store'}});
 async function bounded(req:NextRequest,limit:number){if(Number(req.headers.get('content-length'))>limit)fail('Zahtjev je prevelik.',413);const reader=req.body?.getReader();if(!reader)return Buffer.alloc(0);let size=0;const chunks:Uint8Array[]=[];while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();fail('Zahtjev je prevelik.',413);}chunks.push(value);}return Buffer.concat(chunks);}
@@ -105,11 +109,35 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(path[0]==='items'&&path[2]==='photos'&&method==='POST'){
  const id=uuid.parse(path[1]);if(Number(req.headers.get('content-length'))>4_000_000)fail('Fotografija je prevelika. Maksimalno 3 MB.',413);
  const bytesIn=await bounded(req,4_000_000);const parsedRequest=new Request(req.url,{method:'POST',headers:{'Content-Type':req.headers.get('content-type')||''},body:new Uint8Array(bytesIn)});const form=await parsedRequest.formData();const file=form.get('photo');if(!(file instanceof File)||file.size>3_000_000)fail('Odaberite sliku do 3 MB.');
- let bytes:Buffer;try{bytes=await sharp(Buffer.from(await file.arrayBuffer()),{limitInputPixels:40_000_000}).rotate().resize(1600,1600,{fit:'inside',withoutEnlargement:true}).webp({quality:82}).toBuffer();}catch{fail('Format slike nije podržan. Koristite JPG, PNG ili WebP.');}
- const result=await transaction(async c=>{const item=await c.query('SELECT status FROM parts_app.items WHERE id=$1 FOR UPDATE',[id]);if(!item.rows[0])fail('Artikal ne postoji.',404);if(item.rows[0].status!=='available')fail('Fotografije prodanog artikla se ne mijenjaju.',409);const count=await c.query('SELECT count(*) FROM parts_app.photos WHERE item_id=$1',[id]);if(Number(count.rows[0].count)>=3)fail('Dozvoljene su najviše 3 fotografije.',409);const r=await c.query('INSERT INTO parts_app.photos(item_id,bytes) VALUES($1,$2) RETURNING id',[id,bytes!]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action) VALUES($1,$2,'photo')",[me.id,id]);return r.rows[0];});return json(result,201);
+ let bytes:Buffer, thumbnail:Buffer;
+ try {
+  bytes=await sharp(Buffer.from(await file.arrayBuffer()),{limitInputPixels:40_000_000})
+   .rotate().resize(1600,1600,{fit:'inside',withoutEnlargement:true})
+   .flatten({background:'#ffffff'}).jpeg({quality:86}).toBuffer();
+  thumbnail=await makeThumbnail(bytes);
+ } catch {fail('Format slike nije podržan. Koristite JPG, PNG ili WebP.');}
+ const result=await transaction(async c=>{const item=await c.query('SELECT status FROM parts_app.items WHERE id=$1 FOR UPDATE',[id]);if(!item.rows[0])fail('Artikal ne postoji.',404);if(item.rows[0].status!=='available')fail('Fotografije prodanog artikla se ne mijenjaju.',409);const count=await c.query('SELECT count(*) FROM parts_app.photos WHERE item_id=$1',[id]);if(Number(count.rows[0].count)>=3)fail('Dozvoljene su najviše 3 fotografije.',409);const r=await c.query('INSERT INTO parts_app.photos(item_id,bytes,mime,thumbnail) VALUES($1,$2,$3,$4) RETURNING id',[id,bytes!,'image/jpeg',thumbnail!]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action) VALUES($1,$2,'photo')",[me.id,id]);return r.rows[0];});return json(result,201);
  }
  if(path[0]==='photos'&&method==='GET'){
- const id=uuid.parse(path[1]);const r=await db.query('SELECT bytes,mime FROM parts_app.photos WHERE id=$1',[id]);if(!r.rows[0])fail('Slika nije pronađena.',404);return new NextResponse(r.rows[0].bytes,{headers:{'Content-Type':'image/webp','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':req.nextUrl.searchParams.has('download')?`attachment; filename="dio-${id}.webp"`:'inline'}});
+ const id=uuid.parse(path[1]);
+ const download=req.nextUrl.searchParams.has('download');
+ const thumb=!download&&req.nextUrl.searchParams.get('size')==='thumb';
+ const etag='"photo-v1-'+id+(thumb?'-thumb':'-full')+'"';
+ const headers={'Cache-Control':'private, no-cache',ETag:etag,'X-Content-Type-Options':'nosniff'};
+ if(req.headers.get('if-none-match')===etag)return new NextResponse(null,{status:304,headers});
+ const result=thumb
+  ? await db.query('SELECT thumbnail AS bytes FROM parts_app.photos WHERE id=$1',[id])
+  : await db.query('SELECT bytes,mime FROM parts_app.photos WHERE id=$1',[id]);
+ const photo=result.rows[0];
+ if(!photo)fail('Slika nije pronađena.',404);
+ if(thumb&&!photo.bytes){
+  const legacy=await db.query('SELECT bytes FROM parts_app.photos WHERE id=$1',[id]);
+  photo.bytes=await makeThumbnail(legacy.rows[0].bytes);
+  await db.query('UPDATE parts_app.photos SET thumbnail=$2 WHERE id=$1 AND thumbnail IS NULL',[id,photo.bytes]);
+ }
+ const mime=thumb?'image/jpeg':photo.mime;
+ const extension=mime==='image/jpeg'?'jpg':'webp';
+ return new NextResponse(photo.bytes,{headers:{...headers,'Content-Type':mime,'Content-Disposition':download?'attachment; filename="dio-'+id+'.'+extension+'"':'inline'}});
  }
  if(route==='stats'&&method==='GET'){
  const r=await db.query(`SELECT count(*) FILTER(WHERE status='available') available,count(*) FILTER(WHERE status='sold') sold,COALESCE(sum(sold_price) FILTER(WHERE status='sold'),0) revenue,COALESCE(sum(COALESCE((estimates->'BIH_used'->>'value')::numeric,(estimates->'EU_used'->>'value')::numeric)) FILTER(WHERE status='available'),0) inventory,count(*) FILTER(WHERE status='available' AND NOT(estimates ? 'BIH_used' OR estimates ? 'EU_used')) missing FROM parts_app.items`);
