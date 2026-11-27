@@ -36,7 +36,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(route==='login'&&method==='POST'){
  const input=z.object({username:z.string().trim().min(1).max(50),password:z.string().min(1).max(128)}).parse(await body(req));
  await rate('login-user:'+input.username.toLowerCase(),8,900);
- const {rows}=await db.query('SELECT * FROM parts_app.users WHERE lower(username)=lower($1)',[input.username]);
+ const {rows}=await db.query('SELECT * FROM parts_app.users WHERE active AND lower(username)=lower($1)',[input.username]);
  if(!rows[0]||!verify(input.password,rows[0].password))fail('Korisničko ime ili lozinka nisu ispravni.',401);
  await session(rows[0].id);return json({id:rows[0].id,username:rows[0].username,must_change:rows[0].must_change});
  }
@@ -50,7 +50,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  await transaction(async c=>{await c.query('UPDATE parts_app.users SET password=$1,must_change=false WHERE id=$2',[hash(password),me.id]);await c.query('DELETE FROM parts_app.sessions WHERE user_id=$1',[me.id]);});await session(me.id);return json({ok:true});
  }
  if(me.must_change)fail('Prvo promijenite početnu lozinku.',403);
- if(route==='users'&&method==='GET'){return json((await db.query("SELECT id,username,must_change FROM parts_app.users WHERE lower(username)<>'administrator' ORDER BY lower(username)")).rows);}
+ if(route==='users'&&method==='GET'){return json((await db.query("SELECT id,username,must_change FROM parts_app.users WHERE active AND lower(username)<>'administrator' ORDER BY lower(username)")).rows);}
  if(route==='users'&&method==='POST'){
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash('1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
@@ -78,7 +78,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(route==='items'&&method==='POST'){
  const input=partSchema.parse(await body(req));
  if(input.enrich_after_save)await rate('enrich:'+me.id,30,3600);
- const recipient=await db.query("SELECT id FROM parts_app.users WHERE id=$1 AND (lower(username)<>'administrator' OR id=$2)",[input.owner_id,me.id]);
+ const recipient=await db.query("SELECT id FROM parts_app.users WHERE active AND id=$1 AND (lower(username)<>'administrator' OR id=$2)",[input.owner_id,me.id]);
  if(!recipient.rows[0])fail('Odabrani korisnik nije dostupan.',400);
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify({...input.estimates,...(input.enrich_after_save?{_enrichment:{status:'pending',updated_at:new Date().toISOString()}}:{})}),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});if(input.enrich_after_save)after(()=>enrichItem(row.id));return json(row,201);
  }

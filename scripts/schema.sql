@@ -1,6 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS parts_app;
 REVOKE ALL ON SCHEMA parts_app FROM PUBLIC, anon, authenticated;
 CREATE TABLE IF NOT EXISTS parts_app.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),username text NOT NULL, password text NOT NULL,must_change boolean NOT NULL DEFAULT true,created_at timestamptz DEFAULT now());
+ALTER TABLE parts_app.users ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
 CREATE UNIQUE INDEX IF NOT EXISTS users_name ON parts_app.users(lower(username));
 CREATE TABLE IF NOT EXISTS parts_app.sessions(token text PRIMARY KEY,user_id uuid NOT NULL REFERENCES parts_app.users,expires timestamptz NOT NULL);
 CREATE TABLE IF NOT EXISTS parts_app.limits(key text PRIMARY KEY,count integer NOT NULL,expires timestamptz NOT NULL);

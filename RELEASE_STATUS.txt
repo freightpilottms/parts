@@ -12,3 +12,4 @@ Production build passed. No database migration or new environment variable is re
 This package has not been deployed to Vercel in this session.
 Modal scroll review: Chrome at 390 and 1366 px. Login, add, scroll containment, visible actions, zero sale and export endpoints passed against isolated local data.
 JPEG photo update: before deployment apply ALTER TABLE parts_app.photos ADD COLUMN IF NOT EXISTS thumbnail bytea; to Supabase. New photos stored as JPEG; legacy WebP thumbnails generated on first view. Production build and 78 integration checks passed.
+Run scripts/update-users.sql in Supabase before deployment. Retires Juso and Almin and creates Irnes and Alen.
