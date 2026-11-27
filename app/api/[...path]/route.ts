@@ -1,3 +1,5 @@
+import {scanPart} from '@/lib/scan-part';
+import {inventoryTerms} from '@/lib/inventory-search';
 import {NextRequest,NextResponse,after} from 'next/server';
 import {cookies} from 'next/headers';
 import {z} from 'zod';
@@ -15,7 +17,7 @@ const amount=z.coerce.number().finite().min(0).max(99999999);
 const uuid=z.string().uuid();
 const safeLink=z.url().refine(v=>v.startsWith('https://'));
 const offerSchema=z.object({market:z.enum(['EU','BIH']),condition:z.enum(['new','used']),price:amount,currency:z.enum(['EUR','BAM']),url:safeLink});
-const partSchema=z.object({enrich_after_save:z.boolean().default(false),part_number:z.string().trim().min(3).max(60).refine(v=>normalize(v).length>=3),name:z.string().trim().min(2).max(180),vehicle:z.string().trim().min(2).max(250),category:z.enum(categories),color:z.string().trim().max(60),owner_id:uuid,price:amount,estimates:z.partialRecord(z.enum(['EU_new','EU_used','BIH_new','BIH_used']),z.object({value:amount,count:z.number().int().min(0).max(1000),offers:z.array(offerSchema).max(100).optional(),basis:z.literal('verified_original_oem').optional(),confidence:z.enum(['single_offer','sample_average']).optional(),warning:z.string().max(200).optional()}).optional()).default({}),sources:z.array(z.object({title:z.string().max(200),url:safeLink})).max(12).default([])});
+const partSchema=z.object({markings:z.array(z.string().trim().min(1).max(60)).max(15).default([]),enrich_after_save:z.boolean().default(false),part_number:z.string().trim().min(3).max(60).refine(v=>normalize(v).length>=3),name:z.string().trim().min(2).max(180),vehicle:z.string().trim().min(2).max(250),category:z.enum(categories),color:z.string().trim().max(60),owner_id:uuid,price:amount,estimates:z.partialRecord(z.enum(['EU_new','EU_used','BIH_new','BIH_used']),z.object({value:amount,count:z.number().int().min(0).max(1000),offers:z.array(offerSchema).max(100).optional(),basis:z.literal('verified_original_oem').optional(),confidence:z.enum(['single_offer','sample_average']).optional(),warning:z.string().max(200).optional()}).optional()).default({}),sources:z.array(z.object({title:z.string().max(200),url:safeLink})).max(12).default([])});
 function makeThumbnail(bytes:Buffer){
  return sharp(bytes).resize(240,240,{fit:'inside',withoutEnlargement:true})
   .flatten({background:'#ffffff'}).jpeg({quality:75}).toBuffer();
@@ -30,9 +32,9 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(method!=='GET'){
  const origin=req.headers.get('origin');const expected=new URL(process.env.APP_ORIGIN||req.url).origin;
  if(!origin||origin!==expected)fail('Zahtjev nije dozvoljen s ove adrese.',403);
- if(!route.endsWith('/photos')&&!req.headers.get('content-type')?.startsWith('application/json'))fail('Očekivan JSON zahtjev.',415);
+ if(route!=='scan'&&!route.endsWith('/photos')&&!req.headers.get('content-type')?.startsWith('application/json'))fail('Očekivan JSON zahtjev.',415);
  }
- if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'quick-entry-5',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
+ if(route==='health'&&method==='GET'){await db.query('SELECT 1');return json({ok:true,lookup_version:'parts-scan-1',mode:process.env.PARTS_LOCAL_PREVIEW==='1'?'local-preview':'supabase'});}
  if(route==='login'&&method==='POST'){
  const input=z.object({username:z.string().trim().min(1).max(50),password:z.string().min(1).max(128)}).parse(await body(req));
  await rate('login-user:'+input.username.toLowerCase(),8,900);
@@ -53,9 +55,14 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(route==='users'&&method==='GET'){return json((await db.query("SELECT id,username,must_change FROM parts_app.users WHERE active AND lower(username)<>'administrator' ORDER BY lower(username)")).rows);}
  if(route==='users'&&method==='POST'){
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
- const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash('1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
+ if(['juso','almin'].includes(username.toLowerCase()))fail('Ovo korisničko ime je povučeno.',400);
+ const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash(({irnes:'Irnes',alen:'Alen'} as Record<string,string>)[username.toLowerCase()]?.concat('1234')||'1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
  }
- if(route==='lookup'&&method==='GET'){await rate('lookup:'+me.id,30,3600);const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',req.nextUrl.searchParams.get('mode')!=='full'));}
+ if(route==='scan'&&method==='POST'){
+  await rate('scan-minute:'+me.id,15,60);
+  return json(await scanPart(await bounded(req,3_000_000)));
+ }
+ if(route==='lookup'&&method==='GET'){const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',req.nextUrl.searchParams.get('mode')!=='full',false,()=>rate('lookup-minute:'+me.id,20,60)));}
  if((route==='items'||route==='items/export')&&method==='GET'){
  const exporting=route==='items/export';
  const format=req.nextUrl.searchParams.get('format')||'xlsx';
@@ -63,9 +70,11 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const q=(req.nextUrl.searchParams.get('q')||'').slice(0,100);const status=req.nextUrl.searchParams.get('status')||'available';const cat=req.nextUrl.searchParams.get('category')||'';const owner=req.nextUrl.searchParams.get('owner')||'';if(owner)uuid.parse(owner);
  const page=Math.max(1,Math.min(100000,Number(req.nextUrl.searchParams.get('page'))||1));
  const sort:Record<string,string>={newest:'i.created_at DESC',name:'i.name ASC',price_asc:'i.price ASC',price_desc:'i.price DESC',number:'i.part_number ASC',sold:'i.sold_at DESC NULLS LAST'};
- const where="WHERE ($1='' OR i.name ILIKE '%'||$1||'%' OR i.vehicle ILIKE '%'||$1||'%' OR i.normalized LIKE '%'||$2||'%') AND ($3='all' OR i.status=$3) AND ($4='' OR i.category=$4) AND ($5='' OR i.owner_id::text=$5)";
- const vals=[q,normalize(q)||'__',status,cat,owner];
- const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT ${exporting?20001:30} OFFSET $6`,[...vals,exporting?0:(page-1)*30]);
+ const terms=inventoryTerms(q);
+ const haystack="replace(translate(lower(concat_ws(' ',i.name,i.vehicle,i.category,i.color,i.normalized,i.estimates->>'_markings')),'čćšž','ccsz'),'đ','dj')";
+ const where="WHERE ($1='' OR (length($2)>0 AND (strpos(i.normalized,$2)>0 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.estimates->'_markings')='array' THEN i.estimates->'_markings' ELSE '[]'::jsonb END) mark WHERE strpos(regexp_replace(upper(mark),'[^A-Z0-9]','','g'),$2)>0))) OR (cardinality($6::text[])>0 AND NOT EXISTS (SELECT 1 FROM unnest($6::text[]) term WHERE NOT ("+haystack+" ~ term)))) AND ($3='all' OR i.status=$3) AND ($4='' OR i.category=$4) AND ($5='' OR i.owner_id::text=$5)";
+ const vals=[q,normalize(q),status,cat,owner,terms.map(group=>group.join('|'))];
+ const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' WHEN NOT u.active THEN 'Bivši korisnik' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL WHEN NOT cb.active THEN 'Bivši korisnik' ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL WHEN NOT sb.active THEN 'Bivši korisnik' ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT ${exporting?20001:30} OFFSET $7`,[...vals,exporting?0:(page-1)*30]);
  if(exporting){
  if(rows.rows.length>20000)fail('Izvoz je ograničen na 20.000 artikala. Suzite filtere.',413);
  const filename='parts-skladiste-'+new Date().toISOString().slice(0,10);
@@ -77,13 +86,13 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  }
  if(route==='items'&&method==='POST'){
  const input=partSchema.parse(await body(req));
- if(input.enrich_after_save)await rate('enrich:'+me.id,30,3600);
+
  const recipient=await db.query("SELECT id FROM parts_app.users WHERE active AND id=$1 AND (lower(username)<>'administrator' OR id=$2)",[input.owner_id,me.id]);
  if(!recipient.rows[0])fail('Odabrani korisnik nije dostupan.',400);
- const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify({...input.estimates,...(input.enrich_after_save?{_enrichment:{status:'pending',updated_at:new Date().toISOString()}}:{})}),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});if(input.enrich_after_save)after(()=>enrichItem(row.id));return json(row,201);
+ const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,color,category,owner_id,price,estimates,sources,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',[input.part_number,normalize(input.part_number),input.name,input.vehicle,input.color,input.category,input.owner_id,input.price,JSON.stringify({...input.estimates,...(input.markings.length?{_markings:input.markings}:{}),...(input.enrich_after_save?{_enrichment:{status:'pending',updated_at:new Date().toISOString()}}:{})}),JSON.stringify(input.sources),me.id]);await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'created',$3)",[me.id,r.rows[0].id,JSON.stringify({name:input.name,part_number:input.part_number,price:input.price})]);return r.rows[0];});if(input.enrich_after_save)after(()=>enrichItem(row.id));return json(row,201);
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='enrich'&&method==='POST'){
- const id=uuid.parse(path[1]);const options=z.object({wait:z.boolean().default(false)}).parse(await body(req));await rate('enrich:'+me.id,30,3600);
+ const id=uuid.parse(path[1]);const options=z.object({wait:z.boolean().default(false)}).parse(await body(req));await rate('manual-enrich-minute:'+me.id,15,60);
  const r=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment}', COALESCE(estimates->'_enrichment','{}'::jsonb) || $2::jsonb) WHERE id=$1 AND (owner_id=$3 OR created_by=$3) AND (COALESCE(estimates->'_enrichment'->>'status','') NOT IN ('pending','running') OR (estimates->'_enrichment'->>'updated_at')::timestamptz < now()-interval '2 minutes') RETURNING id",[id,JSON.stringify({status:'pending',updated_at:new Date().toISOString()}),me.id]);
  if(!r.rows[0])fail('Obrada je već u toku ili artikal nije kod vas.',409);
  if(options.wait){await enrichItem(id,true);const item=(await db.query('SELECT id,estimates,sources FROM parts_app.items WHERE id=$1',[id])).rows[0];return json({ok:true,item});}
@@ -146,7 +155,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(route==='costs'&&method==='POST'){
  const input=z.object({goods:amount,transport:amount}).parse(await body(req));await transaction(async c=>{await c.query('UPDATE parts_app.costs SET goods=$1,transport=$2 WHERE id=1',[input.goods,input.transport]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'costs',$2)",[me.id,JSON.stringify(input)]);});return json({ok:true});
  }
- if(route==='activity'&&method==='GET')return json((await db.query(`SELECT a.*,u.username,i.name,i.part_number FROM parts_app.activity a JOIN parts_app.users u ON u.id=a.user_id LEFT JOIN parts_app.items i ON i.id=a.item_id WHERE lower(u.username)<>'administrator' ORDER BY a.created_at DESC LIMIT 50`)).rows);
+ if(route==='activity'&&method==='GET')return json((await db.query(`SELECT a.*,u.username,i.name,i.part_number FROM parts_app.activity a JOIN parts_app.users u ON u.id=a.user_id LEFT JOIN parts_app.items i ON i.id=a.item_id WHERE u.active AND lower(u.username)<>'administrator' AND NOT EXISTS (SELECT 1 FROM parts_app.users retired WHERE NOT retired.active AND lower(retired.username)=lower(a.details->>'username')) ORDER BY a.created_at DESC LIMIT 50`)).rows);
  fail('Nije pronađeno.',404);
  }catch(e:any){if(e instanceof z.ZodError)return json({error:'Provjerite unesene podatke. Obavezna polja, cijene i format moraju biti ispravni.'},400);if(e.code==='23505')return json({error:'Korisničko ime već postoji.'},409);if(e.code==='23503')return json({error:'Odabrani korisnik ili artikal ne postoji.'},400);if(e.status)return json({error:e.message},e.status);console.error('Parts API error:',e.code||e.name);return json({error:'Veza s bazom ili servisom trenutno nije dostupna. Pokušajte ponovo.'},503);}
 }

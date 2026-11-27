@@ -105,7 +105,11 @@ try{
  await pool.query("INSERT INTO parts_app.activity(user_id,action) VALUES($1,'costs')",[other.id]);
  check(!(await call('activity')).body.some(a=>a.user_id===other.id),'administrator actions hidden from activity API');
  check(Number((await pool.query('SELECT count(*) FROM parts_app.activity WHERE user_id=$1',[other.id])).rows[0].count)===1,'hidden administrator audit retained');
+ await pool.query("INSERT INTO parts_app.limits(key,count,expires) VALUES($1,40,now()+interval '1 hour'),($2,40,now()+interval '1 hour')",[ 'enrich:'+me.id,'lookup:'+me.id ]);
+ const repeated=await call('lookup?number=4g0807065');
+ check(repeated.status===200&&repeated.body.origin==='database','existing part lookup works after 30 hourly requests');
  const background=await call('items',{...item,enrich_after_save:true});
+ check(background.status===201,'publication with optional enrichment works after 30 hourly requests');
  check(background.status===201&&background.body.estimates._enrichment.status==='pending'&&enrichmentCalls===0,'publish returns before enrichment starts');
  check((await call('items/'+background.body.id+'/enrich',{})).status===409,'duplicate pending enrichment denied');
  const job=callbacks.shift();await Promise.all([job(),job()]);
@@ -124,6 +128,26 @@ try{
  await call('lookup?number=MODETEST&refresh=1&mode=full');check(lookupMode.identityOnly===false&&lookupMode.refresh===true,'Pretrazi Internet requests full fresh lookup');
  emptyEnrichment=false;const completed=await call('items/'+emptyJob.body.id+'/enrich',{wait:true});
  check(completed.status===200&&completed.body.item.estimates._enrichment.status==='complete'&&callbacks.length===0,'manual article search returns saved results without polling');
+ const scanned=await call('items',{...item,name:'Nosač zadnjeg svjetla',category:'Lijeva zadnja štopka',part_number:'4G9 807 511 P',markings:['ZX-9902']});
+ for(const term of ['nosac audi','štopke lijeve','ZX-9902','zx9902','4g9807511p','A6 nosac']){
+  const result=await call('items?q='+encodeURIComponent(term));
+  check(result.body.items.some(row=>row.id===scanned.body.id),'inventory finds '+term);
+ }
+ const migration=fs.readFileSync('scripts/update-users.sql','utf8');
+ const old=(await pool.query("INSERT INTO parts_app.users(username,password) VALUES('Juso',$1) RETURNING id",[hash('temporary')])).rows[0].id;
+ await pool.query("INSERT INTO parts_app.sessions(token,user_id,expires) VALUES('retired', $1, now()+interval '1 day')",[old]);
+ await pool.query(migration);
+ check(!(await pool.query("SELECT 1 FROM parts_app.sessions WHERE user_id=$1",[old])).rows.length,'retired user sessions revoked');
+ const visible=(await call('users')).body.map(row=>row.username);
+ check(visible.includes('Irnes')&&visible.includes('Alen')&&!visible.includes('Juso')&&!visible.includes('Almin'),'updated user dropdown');
+ for(const username of ['Irnes','Alen']){
+  const r=await call('login',{username,password:username+'1234'},{jar:makeJar()});
+  check(r.status===200&&r.body.must_change,'personal initial password for '+username);
+ }
+ await pool.query("UPDATE parts_app.users SET password=$1,must_change=false WHERE username='Irnes'",[hash('personal123')]);
+ await pool.query(migration);
+ check((await call('login',{username:'Irnes',password:'personal123'},{jar:makeJar()})).status===200,'reapplying migration preserves changed password');
+ check((await call('scan',{}, {jar:makeJar()})).status===401,'photo recognition requires sign-in');
  await call('logout',{});check((await call('items')).status===401,'logout invalidates session');
  const r=await pool.query("SELECT has_schema_privilege('anon','parts_app','USAGE') AS allowed");check(r.rows[0].allowed===false,'public database schema access revoked');
  console.log(`${checks} integration checks passed.`);

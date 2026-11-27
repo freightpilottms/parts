@@ -1,15 +1,3 @@
-Parts release: quick-entry-5
-Quick entry: part name and vehicle first; selling price focused at the top.
-Item details, user assignment, manual internet search and photos remain available in expandable sections.
-Images and market prices are enriched after publication; they are not required to save.
-Identity parsing accepts labelled, inline and pipe-separated answers without another AI extraction call.
-Identity lookup reuses recent full-research cache results; exact suffix and source requirements remain.
-Identity-only research is explicitly used by the main search. GPT fallback also omits market research in identity mode.
-Live Gemini identity test: 4G9807511P, 11.123 seconds, one AI call, Zadnji branik, Audi A6 C7 Avant / Karavan (2011-2014), four sources.
-Timing is a single live measurement, not a latency guarantee.
-All automated tests passed, including 73 API/SQL integration checks, cache reuse, identity parsing, pricing and currency checks.
-Production build passed. No database migration or new environment variable is required.
-This package has not been deployed to Vercel in this session.
-Modal scroll review: Chrome at 390 and 1366 px. Login, add, scroll containment, visible actions, zero sale and export endpoints passed against isolated local data.
-JPEG photo update: before deployment apply ALTER TABLE parts_app.photos ADD COLUMN IF NOT EXISTS thumbnail bytea; to Supabase. New photos stored as JPEG; legacy WebP thumbnails generated on first view. Production build and 78 integration checks passed.
-Run scripts/update-users.sql in Supabase before deployment. Retires Juso and Almin and creates Irnes and Alen.
+Parts – pretraga i skeniranje
+Vercel produkcijski build pokreće scripts/apply-production-roster.mjs nakon kompilacije. Alternativno se scripts/update-users.sql može izvršiti u Supabase SQL Editoru.
+Lokalno provjereni produkcijski build, 92 API/SQL provjere i mobilni unos fotografijom uz stvarni Gemini API.

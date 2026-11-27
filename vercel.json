@@ -1,1 +1,1 @@
-{"framework":"nextjs","buildCommand":"npm run build","installCommand":"npm install"}
+{"framework":"nextjs","buildCommand":"npm run build && node scripts/apply-production-roster.mjs","installCommand":"npm install"}
