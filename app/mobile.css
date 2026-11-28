@@ -165,5 +165,6 @@ html { scrollbar-gutter: stable; }
 .vehicle-filters > .sort { grid-column: 1 / -1; }
 
 /* Separate the estimate explanation from the market price cards. */
-.estimate-grid + .valuation-note { margin-block-start: 16px; line-height: 1.5; }
+.valuation-summary { display: grid; gap: 24px; }
+.valuation-summary > .valuation-note { margin: 0; line-height: 1.5; }
 .valuation-note strong { display: block; margin-block-end: 4px; }
