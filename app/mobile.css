@@ -155,7 +155,10 @@ html { scrollbar-gutter: stable; }
 .scan-match { display:grid; gap:8px; padding:12px; border:1px solid var(--line); border-radius:10px; }
 .scan-match a { overflow-wrap:anywhere; text-decoration:underline; }
 
-.price-change{display:block;margin:4px auto 0}.price-editor{display:grid;gap:6px}.price-editor input{width:100%;min-width:0}.price-editor>div{display:flex;flex-wrap:wrap;gap:4px}.price-editor button{padding:7px 10px}.modal-actions .next-item{margin-left:auto}@media(max-width:760px){.modal-actions .next-item:nth-child(3){grid-column:1/-1}.modal-actions .next-item{width:100%}}
+.asking-price-value{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.asking-price-value .price-change{display:inline-flex;align-items:center;justify-content:center;color:var(--green);flex:none}
+.price-editor input{width:100%;min-width:0}
+.modal-actions .next-item{margin-left:auto}@media(max-width:760px){.modal-actions .next-item:nth-child(3){grid-column:1/-1}.modal-actions .next-item{width:100%}}
 
 .inventory .vehicle-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding-top:0}.vehicle-filters select{min-width:0;width:100%;max-width:none}
 
