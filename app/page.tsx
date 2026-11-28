@@ -146,6 +146,21 @@ export default function Home(){
    setPage(result.page);setItems(result.items);setTotal(result.total);setSelected(following);
   });
  }
+ async function downloadPdf(){
+  const response=await fetch(exportUrl('print'),{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok){
+   const details=await response.json().catch(()=>null);
+   throw Error(details?.error||'Priprema PDF dokumenta nije uspjela.');
+  }
+  const url=URL.createObjectURL(await response.blob());
+  const link=document.createElement('a');
+  link.href=url;
+  link.download='parts-skladiste-'+new Date().toISOString().slice(0,10)+'.pdf';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+ }
  const exportUrl=(format:string)=>'/api/items/export?'+new URLSearchParams({q:query,status,category,owner,make,model,sort,format});
  const resetDraft=()=>{if(busy)return;setDraft(null);setFiles([]);setCreatedId(null);};
  const onFilter=(setter:(v:string)=>void)=>(e:React.ChangeEvent<HTMLSelectElement>)=>{setter(e.target.value);setPage(1);};
@@ -170,7 +185,7 @@ export default function Home(){
   </form>
  </section>
  {error&&<div className="error page-error" role="alert">{error}<button className="icon-button" onClick={()=>setError('')} aria-label="Zatvori grešku"><X size={16}/></button></div>}
- <section className="inventory card"><div className="inventory-head"><div><h2>Artikli <span className="count-pill">{total}</span></h2><p>Pregled i upravljanje vašim autodijelovima</p></div><button className="secondary" onClick={blank}><Plus size={17}/> Dodaj artikal</button></div><div className="inventory-export" aria-label="Izvoz skladišta"><a className="secondary" href={exportUrl('xlsx')} title="Excel datoteka — može se uvesti u Google Sheets"><FileSpreadsheet size={19}/><span>Excel</span></a><a className="secondary" href={exportUrl('print')} target="_blank" rel="noopener noreferrer" title="Print ili sačuvaj kao PDF"><Printer size={19}/><span>Print</span></a><a className="secondary" href={exportUrl('csv')} title="Preuzmi CSV za Excel / Google Sheets"><Download size={19}/><span>CSV</span></a></div><div className="table-toolbar"><div className="tabs">{[['available','Dostupno',stats?.available],['sold','Prodano',stats?.sold],['all','Sve',stats?Number(stats.available)+Number(stats.sold):null]].map(([v,label,count])=><button key={v} className={status===v?'active':''} onClick={()=>{setStatus(String(v));setPage(1);}}>{label}{count!=null&&<span>{count}</span>}</button>)}</div><div className="table-search"><Search size={16}/><input aria-label="Pretraži skladište" value={q} onChange={e=>setQ(e.target.value)} placeholder="Pretraži artikle..."/></div></div><div className="filters"><SlidersHorizontal size={16}/><select aria-label="Kategorija" value={category} onChange={onFilter(setCategory)}><option value="">Sve kategorije</option>{categories.map(c=><option key={c} value={c}>{categoryLabel(c)}</option>)}</select><select aria-label="Korisnik" value={owner} onChange={onFilter(setOwner)}><option value="">Svi korisnici</option>{users.map(u=><option key={u.id} value={u.id}>{u.username}</option>)}</select></div>
+ <section className="inventory card"><div className="inventory-head"><div><h2>Artikli <span className="count-pill">{total}</span></h2><p>Pregled i upravljanje vašim autodijelovima</p></div><button className="secondary" onClick={blank}><Plus size={17}/> Dodaj artikal</button></div><div className="inventory-export" aria-label="Izvoz skladišta"><a className="secondary" href={exportUrl('xlsx')} title="Excel datoteka — može se uvesti u Google Sheets"><FileSpreadsheet size={19}/><span>Excel</span></a><button type="button" className="secondary" onClick={()=>task(downloadPdf)} disabled={busy} title="Preuzmi PDF za štampu"><Printer size={19}/><span>PDF</span></button><a className="secondary" href={exportUrl('csv')} title="Preuzmi CSV za Excel / Google Sheets"><Download size={19}/><span>CSV</span></a></div><div className="table-toolbar"><div className="tabs">{[['available','Dostupno',stats?.available],['sold','Prodano',stats?.sold],['all','Sve',stats?Number(stats.available)+Number(stats.sold):null]].map(([v,label,count])=><button key={v} className={status===v?'active':''} onClick={()=>{setStatus(String(v));setPage(1);}}>{label}{count!=null&&<span>{count}</span>}</button>)}</div><div className="table-search"><Search size={16}/><input aria-label="Pretraži skladište" value={q} onChange={e=>setQ(e.target.value)} placeholder="Pretraži artikle..."/></div></div><div className="filters"><SlidersHorizontal size={16}/><select aria-label="Kategorija" value={category} onChange={onFilter(setCategory)}><option value="">Sve kategorije</option>{categories.map(c=><option key={c} value={c}>{categoryLabel(c)}</option>)}</select><select aria-label="Korisnik" value={owner} onChange={onFilter(setOwner)}><option value="">Svi korisnici</option>{users.map(u=><option key={u.id} value={u.id}>{u.username}</option>)}</select></div>
  <div className="filters vehicle-filters">
   <select aria-label="Marka vozila" value={make} onChange={e=>{setMake(e.target.value);setModel('');setPage(1);}}>
    <option value="">Sve marke</option>{vehicleOptions.map(v=><option key={v.make}>{v.make}</option>)}

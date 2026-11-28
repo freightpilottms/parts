@@ -66,7 +66,10 @@ try{
  const csv=await call('items/export?format=csv&sort=price_asc');
  const csvText=Buffer.from(csv.body).toString('utf8');check(csv.status===200&&csvText.split('\r\n').length===32,'export contains all 31 filtered items beyond pagination');
  const xlsx=await call('items/export?format=xlsx&status=sold');const zip=require('fflate').unzipSync(new Uint8Array(xlsx.body));const sheet=Buffer.from(zip['xl/worksheets/sheet1.xml']).toString('utf8');check(sheet.includes('4G0 807-065')&&!sheet.includes('TEST0')&&sheet.includes('<v>0</v>'),'xlsx honors sold filter and preserves zero sale');
- const print=await call('items/export?format=print&q='+encodeURIComponent('<script>alert(1)</script>'));const html=Buffer.from(print.body).toString('utf8');check(!html.includes('<script>alert(1)</script>')&&html.includes('&lt;script&gt;'),'print escapes untrusted filter text');
+ const print=await call('items/export?format=print');
+ const pdf=Buffer.from(print.body);
+ check(print.status===200 && print.res.headers.get('content-type')==='application/pdf' && /\.pdf"/.test(print.res.headers.get('content-disposition')) && pdf.subarray(0,8).toString()==='%PDF-1.4','signed-in print downloads a PDF');
+ check((await call('items/export?format=print',undefined,{jar:makeJar()})).status===401,'anonymous PDF export denied');
  const {inventoryCsv}=require('../lib/inventory-export.ts');check(inventoryCsv([{part_number:'=1+1',price:0}]).includes("' =".replace(' ', '')+'1+1'),'CSV neutralizes spreadsheet formulas');
  check((await call('items/export?format=bad')).status===400,'invalid export format rejected');
  const newbie=await call('users',{username:'NewUser'});check(newbie.status===201,'create user');

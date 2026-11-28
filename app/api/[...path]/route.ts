@@ -103,7 +103,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const filename='parts-skladiste-'+new Date().toISOString().slice(0,10);
  const scope=[status==='all'?'Svi artikli':status==='sold'?'Prodani artikli':'Dostupni artikli',cat,make,model,q?'Pretraga: '+q:'',owner?'Korisnik: '+(rows.rows[0]?.owner||'odabrani'):'Svi korisnici'].filter(Boolean).join(' / ');
  const content=format==='xlsx'?new Uint8Array(inventoryXlsx(rows.rows)):format==='csv'?inventoryCsv(rows.rows):inventoryPrint(rows.rows,scope);
- return new NextResponse(content,{headers:{'Content-Type':format==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':format==='csv'?'text/csv; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':format==='print'?'inline':`attachment; filename="${filename}.${format}"`}});
+ return new NextResponse(content,{headers:{'Content-Type':format==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':format==='csv'?'text/csv; charset=utf-8':'application/pdf','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':`attachment; filename="${filename}.${format==='print'?'pdf':format}"`}});
  }
  const count=await db.query(`SELECT count(*) FROM parts_app.items i ${where}`,vals);return json({items:rows.rows,total:Number(count.rows[0].count),page,nextId,vehicleOptions:catalog.options});
  }

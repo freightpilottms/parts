@@ -1,3 +1,4 @@
+import {tablePdf} from './inventory-pdf';
 import {categoryLabel} from './market-display';
 import {zipSync,strToU8} from 'fflate';
 
@@ -22,5 +23,5 @@ export function inventoryXlsx(rows:Record<string,any>[]){
  return zipSync(Object.fromEntries(Object.entries(files).map(([name,xml])=>[name,strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+xml)])));
 }
 export function inventoryPrint(rows:Record<string,any>[],scope:string){
- return `<!doctype html><html lang="bs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Parts — pregled skladišta</title><link rel="stylesheet" href="/inventory-print.css"><script src="/inventory-print.js" defer></script></head><body><header><b>parts.</b><button id="print-report">Print / Sačuvaj PDF</button></header><h1>Pregled skladišta</h1><p>${escape(scope)} · ${rows.length} artikala · ${escape(new Date().toLocaleString('bs-BA',{timeZone:'Europe/Sarajevo'}))}</p><div class="table-scroll"><table><thead><tr>${columns.map(c=>`<th>${escape(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${values(row).map(v=>`<td>${escape(typeof v==='number'?v.toFixed(2):v)}</td>`).join('')}</tr>`).join('')||'<tr><td colspan="9">Nema artikala za odabrane filtere.</td></tr>'}</tbody></table></div><footer>Copyright @Simo Valencija & Biba Međed 2026</footer></body></html>`;
+ return tablePdf(columns,rows.map(values),scope);
 }
