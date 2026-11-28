@@ -1,3 +1,4 @@
+import {vehicleCatalog} from '@/lib/vehicle-filters';
 import {scanPart} from '@/lib/scan-part';
 import {inventoryTerms} from '@/lib/inventory-search';
 import {NextRequest,NextResponse,after} from 'next/server';
@@ -59,8 +60,9 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash(({irnes:'Irnes',alen:'Alen'} as Record<string,string>)[username.toLowerCase()]?.concat('1234')||'1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
  }
  if(route==='scan'&&method==='POST'){
-  await rate('scan-minute:'+me.id,15,60);
-  return json(await scanPart(await bounded(req,3_000_000)));
+  const visual=req.nextUrl.searchParams.get('mode')==='visual';
+  await rate((visual?'visual-minute:':'scan-minute:')+me.id,15,60);
+  return json(await scanPart(await bounded(req,3_000_000),visual));
  }
  if(route==='lookup'&&method==='GET'){const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',req.nextUrl.searchParams.get('mode')!=='full',false,()=>rate('lookup-minute:'+me.id,20,60)));}
  if((route==='items'||route==='items/export')&&method==='GET'){
@@ -68,21 +70,38 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  const format=req.nextUrl.searchParams.get('format')||'xlsx';
  if(exporting&&!['xlsx','csv','print'].includes(format))fail('Nepoznat format izvoza.');
  const q=(req.nextUrl.searchParams.get('q')||'').slice(0,100);const status=req.nextUrl.searchParams.get('status')||'available';const cat=req.nextUrl.searchParams.get('category')||'';const owner=req.nextUrl.searchParams.get('owner')||'';if(owner)uuid.parse(owner);
- const page=Math.max(1,Math.min(100000,Number(req.nextUrl.searchParams.get('page'))||1));
+ let page=Math.max(1,Math.min(100000,Number(req.nextUrl.searchParams.get('page'))||1));
  const sort:Record<string,string>={newest:'i.created_at DESC',name:'i.name ASC',price_asc:'i.price ASC',price_desc:'i.price DESC',number:'i.part_number ASC',sold:'i.sold_at DESC NULLS LAST'};
+ const make=(req.nextUrl.searchParams.get('make')||'').slice(0,100);
+ const model=(req.nextUrl.searchParams.get('model')||'').slice(0,100);
+ const vehicles=(!exporting||make||model)?(await db.query("SELECT DISTINCT vehicle FROM parts_app.items WHERE vehicle<>''")).rows:[];
+ const catalog=vehicleCatalog(vehicles.map((v:{vehicle:string})=>v.vehicle),make,model);
  const terms=inventoryTerms(q);
  const haystack="replace(translate(lower(concat_ws(' ',i.name,i.vehicle,i.category,i.color,i.normalized,i.estimates->>'_markings')),'čćšž','ccsz'),'đ','dj')";
- const where="WHERE ($1='' OR (length($2)>0 AND (strpos(i.normalized,$2)>0 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.estimates->'_markings')='array' THEN i.estimates->'_markings' ELSE '[]'::jsonb END) mark WHERE strpos(regexp_replace(upper(mark),'[^A-Z0-9]','','g'),$2)>0))) OR (cardinality($6::text[])>0 AND NOT EXISTS (SELECT 1 FROM unnest($6::text[]) term WHERE NOT ("+haystack+" ~ term)))) AND ($3='all' OR i.status=$3) AND ($4='' OR i.category=$4) AND ($5='' OR i.owner_id::text=$5)";
- const vals=[q,normalize(q),status,cat,owner,terms.map(group=>group.join('|'))];
- const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' WHEN NOT u.active THEN 'Bivši korisnik' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL WHEN NOT cb.active THEN 'Bivši korisnik' ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL WHEN NOT sb.active THEN 'Bivši korisnik' ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${sort[req.nextUrl.searchParams.get('sort')||'']||sort.newest},i.id LIMIT ${exporting?20001:30} OFFSET $7`,[...vals,exporting?0:(page-1)*30]);
+ const where="WHERE ($1='' OR (length($2)>0 AND (strpos(i.normalized,$2)>0 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.estimates->'_markings')='array' THEN i.estimates->'_markings' ELSE '[]'::jsonb END) mark WHERE strpos(regexp_replace(upper(mark),'[^A-Z0-9]','','g'),$2)>0))) OR (cardinality($6::text[])>0 AND NOT EXISTS (SELECT 1 FROM unnest($6::text[]) term WHERE NOT ("+haystack+" ~ term)))) AND ($3='all' OR i.status=$3) AND ($4='' OR i.category=$4) AND ($5='' OR i.owner_id::text=$5) AND ($7::text[] IS NULL OR i.vehicle=ANY($7::text[]))";
+ const vals=[q,normalize(q),status,cat,owner,terms.map(group=>group.join('|')),make||model?catalog.matching:null];
+ const requestedSort=req.nextUrl.searchParams.get('sort')||'newest';
+ const order=(Object.hasOwn(sort,requestedSort)?sort[requestedSort]:sort.newest)+',i.id';
+ const afterId=req.nextUrl.searchParams.get('after_id');
+ let nextId:string|null=null;
+ if(afterId&&!exporting){
+  const position=await db.query(`SELECT next_id,position FROM (
+   SELECT i.id,lead(i.id) OVER w AS next_id,row_number() OVER w AS position
+   FROM parts_app.items i ${where} WINDOW w AS (ORDER BY ${order})
+  ) ranked WHERE id=$8`,[...vals,uuid.parse(afterId)]);
+  nextId=position.rows[0]?.next_id??null;
+  if(!nextId)return json({nextId:null});
+  page=Math.floor(Number(position.rows[0].position)/30)+1;
+ }
+ const rows=await db.query(`SELECT i.*,CASE WHEN lower(u.username)='administrator' THEN 'Interno' WHEN NOT u.active THEN 'Bivši korisnik' ELSE u.username END owner,CASE WHEN lower(cb.username)='administrator' THEN NULL WHEN NOT cb.active THEN 'Bivši korisnik' ELSE cb.username END creator,CASE WHEN lower(sb.username)='administrator' THEN NULL WHEN NOT sb.active THEN 'Bivši korisnik' ELSE sb.username END seller,COALESCE((SELECT json_agg(p.id ORDER BY p.created_at) FROM parts_app.photos p WHERE p.item_id=i.id),'[]') photos FROM parts_app.items i JOIN parts_app.users u ON u.id=i.owner_id JOIN parts_app.users cb ON cb.id=i.created_by LEFT JOIN parts_app.users sb ON sb.id=i.sold_by ${where} ORDER BY ${order} LIMIT ${exporting?20001:30} OFFSET $8`,[...vals,exporting?0:(page-1)*30]);
  if(exporting){
  if(rows.rows.length>20000)fail('Izvoz je ograničen na 20.000 artikala. Suzite filtere.',413);
  const filename='parts-skladiste-'+new Date().toISOString().slice(0,10);
- const scope=[status==='all'?'Svi artikli':status==='sold'?'Prodani artikli':'Dostupni artikli',cat,q?'Pretraga: '+q:'',owner?'Korisnik: '+(rows.rows[0]?.owner||'odabrani'):'Svi korisnici'].filter(Boolean).join(' / ');
+ const scope=[status==='all'?'Svi artikli':status==='sold'?'Prodani artikli':'Dostupni artikli',cat,make,model,q?'Pretraga: '+q:'',owner?'Korisnik: '+(rows.rows[0]?.owner||'odabrani'):'Svi korisnici'].filter(Boolean).join(' / ');
  const content=format==='xlsx'?new Uint8Array(inventoryXlsx(rows.rows)):format==='csv'?inventoryCsv(rows.rows):inventoryPrint(rows.rows,scope);
  return new NextResponse(content,{headers:{'Content-Type':format==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':format==='csv'?'text/csv; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':format==='print'?'inline':`attachment; filename="${filename}.${format}"`}});
  }
- const count=await db.query(`SELECT count(*) FROM parts_app.items i ${where}`,vals);return json({items:rows.rows,total:Number(count.rows[0].count),page});
+ const count=await db.query(`SELECT count(*) FROM parts_app.items i ${where}`,vals);return json({items:rows.rows,total:Number(count.rows[0].count),page,nextId,vehicleOptions:catalog.options});
  }
  if(route==='items'&&method==='POST'){
  const input=partSchema.parse(await body(req));
@@ -97,6 +116,22 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(!r.rows[0])fail('Obrada je već u toku ili artikal nije kod vas.',409);
  if(options.wait){await enrichItem(id,true);const item=(await db.query('SELECT id,estimates,sources FROM parts_app.items WHERE id=$1',[id])).rows[0];return json({ok:true,item});}
  after(()=>enrichItem(id,true));return json({ok:true},202);
+ }
+ if(path.length===3&&path[0]==='items'&&path[2]==='price'&&method==='POST'){
+  const id=uuid.parse(path[1]);
+  const priceValue=z.number().finite().min(0).max(99999999).multipleOf(0.01);
+  const input=z.object({price:priceValue,expected_price:priceValue}).parse(await body(req));
+  await transaction(async c=>{
+   const item=(await c.query('SELECT price,status,owner_id FROM parts_app.items WHERE id=$1 FOR UPDATE',[id])).rows[0];
+   if(!item)fail('Artikal ne postoji.',404);
+   if(item.owner_id!==me.id)fail('Cijenu može promijeniti korisnik kod kojeg je artikal.',403);
+   if(item.status!=='available')fail('Artikal je već prodan.',409);
+   if(Number(item.price)===input.price)return;
+   if(Number(item.price)!==input.expected_price)fail('Cijena se u međuvremenu promijenila. Provjerite trenutni iznos.',409);
+   await c.query('UPDATE parts_app.items SET price=$1 WHERE id=$2',[input.price,id]);
+   await c.query("INSERT INTO parts_app.activity(user_id,item_id,action,details) VALUES($1,$2,'price',$3)",[me.id,id,JSON.stringify({previous_price:Number(item.price),price:input.price})]);
+  });
+  return json({price:input.price});
  }
  if(path.length===3&&path[0]==='items'&&path[2]==='owner'&&method==='POST'){
  const id=uuid.parse(path[1]);const input=z.object({owner_id:uuid,expected_owner_id:uuid}).parse(await body(req));
@@ -149,7 +184,32 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  return new NextResponse(photo.bytes,{headers:{...headers,'Content-Type':mime,'Content-Disposition':download?'attachment; filename="dio-'+id+'.'+extension+'"':'inline'}});
  }
  if(route==='stats'&&method==='GET'){
- const r=await db.query(`SELECT count(*) FILTER(WHERE status='available') available,count(*) FILTER(WHERE status='sold') sold,COALESCE(sum(sold_price) FILTER(WHERE status='sold'),0) revenue,COALESCE(sum(COALESCE((estimates->'BIH_used'->>'value')::numeric,(estimates->'EU_used'->>'value')::numeric)) FILTER(WHERE status='available'),0) inventory,count(*) FILTER(WHERE status='available' AND NOT(estimates ? 'BIH_used' OR estimates ? 'EU_used')) missing FROM parts_app.items`);
+ // Market estimates are stored in KM for both regions. Each available physical item contributes once.
+ const r=await db.query(`WITH priced AS (
+   SELECT normalized,status,price,sold_price,
+    CASE WHEN estimates->'BIH_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'BIH_used'->'value')='number'
+         THEN (estimates->'BIH_used'->>'value')::numeric END AS bih,
+    CASE WHEN estimates->'EU_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'EU_used'->'value')='number'
+         THEN (estimates->'EU_used'->>'value')::numeric END AS eu
+   FROM parts_app.items
+ ), comparable AS (
+   SELECT normalized,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY bih) FILTER (WHERE bih>0) AS bih_reference,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY sold_price) FILTER (WHERE status='sold' AND sold_price>0) AS sale_reference,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY eu) FILTER (WHERE eu>0) AS eu_reference
+   FROM priced WHERE normalized<>'' GROUP BY normalized
+ ), valued AS (
+   SELECT p.*,round(COALESCE(CASE WHEN bih>0 THEN bih END,bih_reference,sale_reference,
+      CASE WHEN eu>0 THEN eu END,eu_reference)::numeric,2) AS estimated
+   FROM priced p LEFT JOIN comparable USING (normalized)
+ )
+ SELECT count(*) FILTER (WHERE status='available') available, count(*) FILTER (WHERE status='sold') sold,
+  COALESCE(sum(sold_price) FILTER (WHERE status='sold'),0) revenue,
+  COALESCE(sum(price) FILTER (WHERE status='available'),0) asking_total,
+  COALESCE(sum(estimated) FILTER (WHERE status='available'),0) inventory,
+  count(estimated) FILTER (WHERE status='available') valued_count,
+  count(*) FILTER (WHERE status='available' AND estimated IS NULL) missing
+ FROM valued`);
  const cats=await db.query("SELECT category,count(*) FROM parts_app.items WHERE status='available' GROUP BY category ORDER BY category");const costs=(await db.query('SELECT goods,transport FROM parts_app.costs WHERE id=1')).rows[0];return json({...r.rows[0],categories:cats.rows,costs,profit:Number(r.rows[0].revenue)-Number(costs.goods)-Number(costs.transport)});
  }
  if(route==='costs'&&method==='POST'){

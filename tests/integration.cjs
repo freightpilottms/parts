@@ -59,6 +59,9 @@ try{
  const a=await call('activity');check(a.body.filter(x=>x.action==='sold').length===1&&a.body.some(x=>x.username==='TestAdmin'&&x.action==='created'),'atomic actor audit');
  for(let i=0;i<31;i++)await pool.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,category,owner_id,price,created_by) VALUES($1,$1,$2,$3,$4,$5,$6,$5)',['TEST'+i,'Test '+i,'Audi',item.category,me.id,i]);
  const first=await call('items?sort=price_asc');const second=await call('items?page=2&sort=price_asc');check(first.body.items.length===30&&second.body.items.length===1&&Number(first.body.items[0].price)===0,'30-item pagination and sorting');
+ const next=await call('items?q=Test&sort=price_asc&after_id='+first.body.items[29].id);
+ check(next.body.page===2&&next.body.nextId===second.body.items[0].id,'next detail crosses page boundary in filtered price order');
+ check((await call('items?sort=price_asc&after_id='+second.body.items[0].id)).body.nextId===null,'last detail has no successor');
  check((await call('items?q='+encodeURIComponent("'; DROP TABLE parts_app.items;--"))).status===200,'SQL injection treated as search data');
  const csv=await call('items/export?format=csv&sort=price_asc');
  const csvText=Buffer.from(csv.body).toString('utf8');check(csv.status===200&&csvText.split('\r\n').length===32,'export contains all 31 filtered items beyond pagination');
@@ -97,7 +100,14 @@ try{
  check((await call('items/'+delegatedId+'/owner',{owner_id:me.id,expected_owner_id:newbie.body.id})).status===200,'repeated self assignment is idempotent');
  check(Number((await pool.query("SELECT count(*) FROM parts_app.activity WHERE item_id=$1 AND action='owner'",[delegatedId])).rows[0].count)===1,'owner change audited once');
  check((await call('items/'+delegatedId+'/sell',{price:0},{jar:newJar})).status===409,'previous owner loses sale permission');
+ const priceRoute='items/'+delegatedId+'/price';
+ check((await call(priceRoute,{price:12.35,expected_price:item.price},{jar:newJar})).status===403,'other user cannot edit asking price');
+ check((await call(priceRoute,{price:12.35,expected_price:item.price})).status===200,'owner can update asking price with cents');
+ check((await call(priceRoute,{price:0,expected_price:item.price})).status===409,'concurrent price edit rejected');
+ check((await call(priceRoute,{price:0,expected_price:12.35})).status===200,'zero asking price saves');
+ check((await call('activity')).body.some(a=>a.action==='price'&&a.item_id===delegatedId&&Number(a.details.previous_price)===12.35&&a.details.price===0),'asking price change audited');
  check((await call('items/'+delegatedId+'/sell',{price:0})).status===200,'current owner can sell for zero');
+ check((await call(priceRoute,{price:80,expected_price:0})).status===409,'sold item price locked');
  check((await call('items/'+delegatedId+'/owner',{owner_id:newbie.body.id,expected_owner_id:me.id},{jar:newJar})).status===409,'sold item owner cannot be changed');
  const privateItem=(await pool.query('INSERT INTO parts_app.items(part_number,normalized,name,vehicle,category,owner_id,price,created_by) VALUES($1,$1,$2,$3,$4,$5,10,$5) RETURNING id',['ADMINPART','Admin part','Audi',item.category,other.id])).rows[0];
  check((await call('items/'+privateItem.id+'/sell',{price:0})).status===409,'cannot sell another owner item even for zero');
@@ -148,6 +158,41 @@ try{
  await pool.query(migration);
  check((await call('login',{username:'Irnes',password:'personal123'},{jar:makeJar()})).status===200,'reapplying migration preserves changed password');
  check((await call('scan',{}, {jar:makeJar()})).status===401,'photo recognition requires sign-in');
+ const financeBefore=(await call('stats')).body;
+ const estimate=value=>({value,count:1,basis:'verified_original_oem'});
+ async function stock(number,price,estimates={}){
+  const r=await call('items',{...item,part_number:number,price,estimates});
+  assert.equal(r.status,201);return r.body.id;
+ }
+ for(const realized of [0,200,600]){
+  const id=await stock('FIN123',999);
+  assert.equal((await call('items/'+id+'/sell',{price:realized})).status,200);
+ }
+ await stock('FIN 123',50,{EU_used:estimate(900)});
+ await stock('FIN-123',100);
+ await stock('FIN456',200,{BIH_used:estimate(250),EU_used:estimate(300)});
+ await stock('FIN 456',300);
+ await stock('FIN789',0,{EU_used:estimate(195.58)});
+ const unknown=await stock('FIN999',75,{BIH_new:estimate(900),BIH_used:{value:500,count:1}});
+ const finance=(await call('stats')).body;
+ check(Math.abs(finance.inventory-financeBefore.inventory-1495.58)<0.001,'stock value prefers local verified used prices then median positive sales then EU used in KM');
+ check(finance.valued_count-financeBefore.valued_count===5&&finance.missing-financeBefore.missing===1,'coverage includes same-number references and excludes unsupported estimates');
+ check(finance.asking_total-financeBefore.asking_total===725&&finance.revenue-financeBefore.revenue===800,'asking total covers available units and actual sales stay in revenue');
+ await call('items/'+unknown+'/price',{price:90,expected_price:75});
+ const repriced=(await call('stats')).body;
+ check(repriced.asking_total-finance.asking_total===15&&repriced.inventory===finance.inventory,'repricing changes asking total independently of market value');
+ for(const [n,vehicle] of ['VW Golf VII / Passat B8','Volkswagen Golf VIII','Audi A6 / A7 C7 Avant','Vozilo nije utvrđeno'].entries()){
+  assert.equal((await call('items',{...item,name:'Filter uzorak',part_number:'FLT'+n,vehicle})).status,201);
+ }
+ const filter='q=uzorak&owner='+me.id+'&category='+encodeURIComponent(item.category)+'&status=available&sort=number&make=Volkswagen';
+ const filtered=(await call('items?'+filter)).body;
+ check(filtered.total===2&&filtered.vehicleOptions.find(v=>v.make==='Volkswagen').models.join(',')==='Golf,Passat','make aliases grouped and combined with other filters');
+ check(filtered.vehicleOptions.find(v=>v.make==='Audi').models.includes('A7')&&!filtered.vehicleOptions.some(v=>v.make==='Vozilo'),'fitment lists secondary model and skips unknown vehicle');
+ const one=(await call('items?'+filter+'&model=Passat')).body;
+ check(one.total===1&&one.items[0].part_number==='FLT0','selected model limits rows within make');
+ check((await call('items?'+filter+'&model=A7')).body.total===0,'mismatched make and model yields no rows');
+ const csvFiltered=await call('items/export?format=csv&'+filter+'&model=Passat');
+ check(Buffer.from(csvFiltered.body).toString().includes('FLT0')&&!Buffer.from(csvFiltered.body).toString().includes('FLT1'),'export respects make and model');
  await call('logout',{});check((await call('items')).status===401,'logout invalidates session');
  const r=await pool.query("SELECT has_schema_privilege('anon','parts_app','USAGE') AS allowed");check(r.rows[0].allowed===false,'public database schema access revoked');
  console.log(`${checks} integration checks passed.`);

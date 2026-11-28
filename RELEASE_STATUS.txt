@@ -1,3 +1,4 @@
-Parts – pretraga i skeniranje
-Vercel produkcijski build pokreće scripts/apply-production-roster.mjs nakon kompilacije. Alternativno se scripts/update-users.sql može izvršiti u Supabase SQL Editoru.
-Lokalno provjereni produkcijski build, 92 API/SQL provjere i mobilni unos fotografijom uz stvarni Gemini API.
+Filteri za marku i model vozila, povezani s pretragom, izvozom i navigacijom. 109 API/SQL provjera i produkcijski build su prošli.
+Finansije: procijenjena i prodajna vrijednost dostupnih artikala u KM; 104 API/SQL provjere i produkcijski build su prošli.
+Parts – tabela s nazivom, brojem i fotografijom, prelazak na sljedeći artikal i izmjena prodajne cijene. Produkcijski build i 100 API/SQL provjera uspješni.
+Parts – vizuelna pretraga cijelog dijela i provjera OEM oznake. Za dodatno podudaranje fotografija na webu postavite serversku varijablu GOOGLE_CLOUD_VISION_API_KEY za Google Cloud Vision Web Detection. Produkcijski build i lokalni API testovi su prošli.

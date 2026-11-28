@@ -4,7 +4,9 @@ import {Camera,Upload,ScanLine,LoaderCircle} from 'lucide-react';
 import {categories} from '@/lib/shared';
 
 type Mark={kind:'OEM'|'Serijski broj'|'Druga oznaka',value:string};
-type Reading={name:string,vehicle:string,category:typeof categories[number],markings:Mark[]};
+type Source={title:string,url:string};
+type Reading={name:string,vehicle:string,category:typeof categories[number],markings:Mark[],sources?:Source[]};
+type Match={name:string,vehicle:string,features?:string,sources:Source[],category?:Reading['category']};
 export type ScanDraft={file:File,number:string,reading:Reading,hasOem:boolean};
 
 export default function PartScanner({prepare,onAccept}:{prepare:(f:File)=>Promise<File>,onAccept:(draft:ScanDraft)=>void}){
@@ -12,6 +14,29 @@ export default function PartScanner({prepare,onAccept}:{prepare:(f:File)=>Promis
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[file,setFile]=useState<File|null>(null);
  const [reading,setReading]=useState<Reading|null>(null),[number,setNumber]=useState(''),[hasOem,setHasOem]=useState(false);
  const [preview,setPreview]=useState('');
+ const [detailFile,setDetailFile]=useState<File|null>(null),[match,setMatch]=useState<Match|null>(null);
+ const [checking,setChecking]=useState(false),[checked,setChecked]=useState(false),[accepted,setAccepted]=useState(false);
+ const [pages,setPages]=useState<Source[]>([]);
+ const exact=hasOem&&number.trim().length>=3?number.trim():'';
+ const ready=Boolean(reading);
+ useEffect(()=>{
+  setMatch(null);setPages([]);setAccepted(false);setChecked(false);setChecking(false);
+  if(!ready||!detailFile)return;
+  const controller=new AbortController();
+  setChecking(true);
+  const timer=setTimeout(async()=>{
+   try{
+    const res=exact?await fetch('/api/lookup?mode=identity&number='+encodeURIComponent(exact),{signal:controller.signal})
+     :await fetch('/api/scan?mode=visual',{method:'POST',body:detailFile,signal:controller.signal});
+    if(!res.ok)throw Error();
+    const data=await res.json();
+    const result=exact?(data.name&&data.vehicle&&(data.origin==='database'||data.sources?.length)?data:null):data.match;
+    if(!controller.signal.aborted){setPages(data.pages||[]);setMatch(result);setAccepted(Boolean(exact&&result));}
+   }catch{/* The first visual reading remains available. */}
+   finally{if(!controller.signal.aborted){setChecking(false);setChecked(true);}}
+  },exact?300:0);
+  return ()=>{clearTimeout(timer);controller.abort();};
+ },[ready,detailFile,exact]);
  useEffect(()=>{
   if(!file){setPreview('');return;}
   const url=URL.createObjectURL(file);setPreview(url);return ()=>URL.revokeObjectURL(url);
@@ -22,7 +47,9 @@ export default function PartScanner({prepare,onAccept}:{prepare:(f:File)=>Promis
   setError('');setBusy(true);setReading(null);setNumber('');setHasOem(false);setFile(null);
   try{
    const prepared=await prepare(source);setFile(prepared);
-   const response=await fetch('/api/scan',{method:'POST',headers:{'Content-Type':prepared.type},body:prepared});
+   const detail=source.size<=3_000_000?source:prepared;
+   setDetailFile(detail);
+   const response=await fetch('/api/scan',{method:'POST',headers:{'Content-Type':detail.type},body:detail});
    const data=await response.json();
    if(!response.ok)throw Error(data.error||'Očitavanje nije uspjelo.');
    const result:Reading=data;
@@ -34,7 +61,9 @@ export default function PartScanner({prepare,onAccept}:{prepare:(f:File)=>Promis
  function accept(){
   if(!file)return;
   onAccept({file,number:number.trim()||'INT-'+crypto.randomUUID().slice(0,13).toUpperCase(),
-   hasOem:hasOem&&Boolean(number.trim()),reading:reading||{name:'',vehicle:'',category:'Ostali dijelovi',markings:[]}});
+   hasOem:hasOem&&Boolean(number.trim()),reading:reading?{...reading,vehicle:accepted&&match?match.vehicle:'',
+    name:accepted&&match?match.name:reading.name,category:accepted&&match?.category?match.category:reading.category,
+    sources:accepted&&match?match.sources:[]}:{name:'',vehicle:'',category:'Ostali dijelovi',markings:[]}});
  }
  return <div className="part-scanner">
   <div className="scan-actions"><button type="button" className="secondary" disabled={busy} onClick={()=>camera.current?.click()}><Camera size={17}/>Uslikaj dio</button>
@@ -44,8 +73,16 @@ export default function PartScanner({prepare,onAccept}:{prepare:(f:File)=>Promis
   {preview&&<img src={preview} alt="Fotografija odabrana za očitavanje" style={{maxWidth:'100%',height:160,objectFit:'contain',justifySelf:'center'}}/>}
   {busy&&<p role="status"><LoaderCircle size={16} className="spin"/> Očitavanje oznaka i prepoznavanje dijela…</p>}
   {error&&<p role="alert" className="error">{error}</p>}
-  {reading&&<><strong>{reading.name||'Dio nije prepoznat'}</strong>{reading.vehicle&&<p>{reading.vehicle}</p>}
-    <p>Provjeri oznake sa slike. Odaberi broj pod kojim želiš voditi artikal.</p>
+  {reading&&<><strong>{reading.name||'Dio nije prepoznat'}</strong>
+    {checking&&<p role="status">{exact?'Provjeravam OEM broj…':'Tražim vozilo prema obliku i detaljima dijela…'}</p>}
+    {pages.length>0&&<div className="scan-match"><strong>Stranice s podudarnim fotografijama</strong>
+     {pages.map(s=><a key={s.url} href={s.url} target="_blank" rel="noreferrer">{s.title}</a>)}</div>}
+    {match&&<div className="scan-match"><strong>{exact?'Rezultat za odabrani OEM broj':'Moguće podudaranje po izgledu'}</strong>
+     <p>{match.name} · {match.vehicle}</p>{match.features&&<p>{match.features}</p>}
+     {match.sources?.map(s=><a key={s.url} href={s.url} target="_blank" rel="noreferrer">{s.title}</a>)}
+     <label><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/> Koristi ovaj naziv i vozilo</label></div>}
+    {checked&&!match&&<p>Vozilo nije potvrđeno. Možeš nastaviti s nazivom dijela ili uslikati prepoznatljiviji ugao.</p>}
+    {reading.markings.length>0&&<p>Provjeri oznake sa slike. Odaberi broj pod kojim želiš voditi artikal.</p>}
     {reading.markings.map((mark,i)=><div className="scan-mark" key={i}>
      <button type="button" aria-pressed={number===mark.value} onClick={()=>{setNumber(mark.value);setHasOem(mark.kind==='OEM');}}>{mark.kind} · {mark.value}</button>
      <button type="button" aria-label={'Ukloni oznaku '+mark.value} onClick={()=>{setReading({...reading,markings:reading.markings.filter((_,j)=>j!==i)});if(number===mark.value){setNumber('');setHasOem(false);}}}>Ukloni</button>
