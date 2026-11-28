@@ -68,6 +68,35 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
   const hints=visual&&query.has('part')?visualHints.parse({models:query.getAll('model'),part:query.get('part'),side:query.get('side')||'unknown'}):undefined;
   return json(await scanPart(await bounded(req,3_000_000),visual,hints));
  }
+ if(route==='valuation'&&method==='GET'){
+  const params=req.nextUrl.searchParams;
+  const number=normalize(z.string().min(3).max(60).parse(params.get('number')));
+  const id=params.get('id')?uuid.parse(params.get('id')):null;
+  const name=(params.get('name')||'').trim().slice(0,180), vehicle=(params.get('vehicle')||'').trim().slice(0,250);
+  const category=(params.get('category')||'').slice(0,100);
+  const samples=await db.query(`SELECT normalized=$1 AS exact,status,
+    CASE WHEN status='sold' THEN sold_price ELSE price END AS amount
+    FROM parts_app.items WHERE ($2::uuid IS NULL OR id<>$2)
+    AND COALESCE(estimates->>'_scan_fitment','')<>'pending'
+    AND (normalized=$1 OR (status='sold' AND category=$5 AND lower(name)=lower($3) AND lower(vehicle)=lower($4)))
+    AND CASE WHEN status='sold' THEN sold_price>0 AND sold_at>now()-interval '1 year'
+             ELSE price>0 AND created_at>now()-interval '1 year' END
+    ORDER BY (normalized=$1) DESC,(status='sold') DESC,coalesce(sold_at,created_at) DESC LIMIT 100`,
+    [number,id,name,vehicle,category]);
+  const groups=[
+   {type:'sale',rows:samples.rows.filter(r=>r.exact&&r.status==='sold')},
+   {type:'asking',rows:samples.rows.filter(r=>r.exact&&r.status==='available')},
+   {type:'similar',rows:samples.rows.filter(r=>!r.exact&&r.status==='sold')}
+  ];
+  for(const group of groups){
+   const prices=group.rows.map(r=>Number(r.amount)).sort((a,b)=>a-b);
+   if(prices.length<(group.type==='similar'?3:1))continue;
+   const middle=Math.floor(prices.length/2);
+   const median=prices.length%2?prices[middle]:(prices[middle-1]+prices[middle])/2;
+   return json({reference:{type:group.type,median,count:prices.length}});
+  }
+  return json({reference:null});
+ }
  if(route==='lookup'&&method==='GET'){const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));if(req.nextUrl.searchParams.get('mode')==='scan')return json(await scanFitment(number,()=>rate('lookup-minute:'+me.id,20,60)));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',req.nextUrl.searchParams.get('mode')!=='full',false,()=>rate('lookup-minute:'+me.id,20,60)));}
  if((route==='items'||route==='items/export')&&method==='GET'){
  const exporting=route==='items/export';

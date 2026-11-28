@@ -32,6 +32,12 @@ try{
  check((await call('items',{name:'bad'})).status===400,'invalid item denied');
  const item={part_number:'4G0 807-065',name:'Prednji branik',vehicle:'Audi A6 C7',color:'Crna',category:'Prednji branik',owner_id:me.id,price:220,estimates:{BIH_used:{value:200,count:2}},sources:[]};
  const created=await call('items',item);check(created.status===201,'publish item');const id=created.body.id;
+ const valuation=await call('valuation?number=4g0807065');
+ check(valuation.body.reference?.median===220&&valuation.body.reference.type==='asking','matching OEM asking price is labelled as inventory evidence');
+ check((await call('valuation?number=4g0807065&id='+id)).body.reference===null,'exclude current item from its own estimate');
+ const {productPrice}=require('../lib/gemini-lookup.ts');
+ const sellerPage={url:'https://example.ba/dio',title:'Original Audi',description:'',productNumber:'4G0 807 065',structuredOffers:[{price:350,priceCurrency:'BAM',itemCondition:'https://schema.org/UsedCondition'}]};
+ check(productPrice(sellerPage,'4g0807065')?.price===350&&!productPrice(sellerPage,'4g0807065D')&&!productPrice({...sellerPage,title:'Aftermarket Audi'},'4g0807065'),'recover seller-published exact OEM price and reject suffix mismatch and copies');
  const image=await require('sharp')({create:{width:800,height:600,channels:3,background:'#157b55'}}).png().toBuffer();
  let photo;
  for(let i=0;i<3;i++){const form=new FormData();form.append('photo',new File([image],'test.png',{type:'image/png'}));const r=await call('items/'+id+'/photos',form);check(r.status===201,'photo '+(i+1)+' accepted');photo=r.body.id;}
@@ -53,6 +59,7 @@ try{
  const found=await call('lookup?number=4g0807065');check(found.body.origin==='database'&&found.body.vehicle==='Audi A6 C7','normalized index-first lookup');
  check((await call('items/'+id+'/sell',{price:-1})).status===400,'negative sale rejected');
  const sales=await Promise.all([call('items/'+id+'/sell',{price:0}),call('items/'+id+'/sell',{price:0})]);check(sales.filter(r=>r.status===200).length===1&&sales.filter(r=>r.status===409).length===1,'concurrent sale: exactly one wins; zero accepted');
+ check((await call('valuation?number=4G0807065')).body.reference===null,'zero sale excluded from valuation');
  const available=await call('items?status=available');const sold=await call('items?status=sold');check(available.body.total===0&&sold.body.total===1&&Number(sold.body.items[0].sold_price)===0,'sold item preserved and removed from available');
  check((await call('items/'+id+'/photos',fourth)).status===409,'sold photos immutable');
  await call('costs',{goods:100,transport:20});const stats=await call('stats');check(stats.body.profit===-120&&Number(stats.body.sold)===1,'costs and zero-sale profit');

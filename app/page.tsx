@@ -50,6 +50,25 @@ function Modal({title,subtitle,children,onClose,wide=false}:{title:string,subtit
 }
 function Field({label,children}:{label:string,children:React.ReactNode}){return <label className="field"><span>{label}</span>{children}</label>;}
 function Enrichment({item,onRetry,canRetry,busy=false}:{item:Row,onRetry:(confirmedOem?:string)=>void,canRetry:boolean,busy?:boolean}){
+ const [local,setLocal]=useState<{key:string,reference:Row}|null>(null);
+ const params=new URLSearchParams({number:item.part_number||'',name:item.name||'',vehicle:item.vehicle||'',category:item.category||''});
+ if(item.id && !item.quick_ready)params.set('id',item.id);
+ const key=params.toString();
+ const skipLocal=!item.part_number||item.part_number.trim().length<3||item.estimates?._scan_fitment==='pending'||(item.scan_entry&&!item.enrich_after_save);
+ useEffect(()=>{
+  if(skipLocal)return;
+  const controller=new AbortController();
+  const timer=setTimeout(async()=>{
+   try{
+    const response=await fetch('/api/valuation?'+key,{signal:controller.signal});
+    if(response.ok){const data=await response.json();if(!controller.signal.aborted)setLocal(data.reference?{key,reference:data.reference}:null);}
+   }catch{/* The external valuation is independent of inventory history. */}
+  },250);
+  return ()=>{clearTimeout(timer);controller.abort();};
+ },[key,skipLocal]);
+ const localPrice=!skipLocal&&local?.key===key?local.reference:null;
+ const euUsed=item.estimates?.EU_used;
+ const euReference=euUsed?.basis==='verified_original_oem'&&Number(euUsed.value)>0?Number(euUsed.value):null;
  const [confirmedNumber,setConfirmedNumber]=useState('');
  if(item.estimates?._scan_fitment==='pending')return <section>{item.estimates._visual_vehicle&&<p><strong>Prema fotografiji · {item.estimates._visual_vehicle}</strong></p>}<p className="info-box">Model vozila čeka potvrdu. Artikal je izostavljen iz tržišne procjene.</p>
  {canRetry&&<><label className="field">OEM broj s fizičkog dijela<input value={confirmedNumber} onChange={e=>setConfirmedNumber(e.target.value)} maxLength={60}/></label>
@@ -64,7 +83,10 @@ function Enrichment({item,onRetry,canRetry,busy=false}:{item:Row,onRetry:(confir
  {(meta?.status==='failed'||stale)&&<p className="info-box">{stale||meta?.reason==='timeout'?'Servis nije završio dopunu na vrijeme.':meta?.reason==='identity'?'Pretraga nije potvrdila identitet dijela.':meta?.reason==='rate'?'Za dopunu slika i cijena pokušajte ponovo za jednu minutu.':meta?.reason==='provider'?'AI servis trenutno nije dostupan.':'Dopuna nije završena.'} Artikal je sačuvan.</p>}
  {meta?.images?.length>0&&<ReferenceImage key={meta.updated_at} urls={meta.images} name={item.name}/>}
  <div className="estimate-grid">{[['EU_new','EU novo'],['EU_used','EU polovno'],['BIH_new','BiH novo'],['BIH_used','BiH polovno']].map(([key,label])=>{const value=item.estimates?.[key];const [market,condition]=key.split('_');const native=(meta?.offers||[]).filter((o:Row)=>o.market===market&&o.condition===condition);const converted=native.map((o:Row)=>marketAmount(Number(o.price),o.currency,market,o.eur_rate)).filter((v:number|null):v is number=>v!==null);const nativeValue=converted.length?marketMoney(converted.reduce((a:number,b:number)=>a+b,0)/converted.length,market):native.length?native.length+' ponuda':'';return <div key={key}><span>{label}</span><strong>{value?marketMoney(marketAmount(Number(value.value),'BAM',market)!,market):nativeValue|| (pending&&!stale?'U obradi':'Nema podataka')}</strong>{value&&<small>{value.count} ponuda · {value.count===1?'orijentir':'prosjek uzorka'}</small>}{!value&&native.length>0&&<small>{native.length===1?'Cijena oglasa':'Prosjek dostupnih cijena oglasa'}; {native.some((o:Row)=>o.originality==='unconfirmed')?'originalnost provjeriti kod prodavača.':converted.length?'Preračunato u valutu tržišta.':'Kurs trenutno nije dostupan.'}</small>}{value?.warning&&<small>{value.warning}</small>}</div>;})}</div>
- {meta?.offers?.length>0&&<details className="sources" open><summary>Pronađene ponude ({meta.offers.length})</summary>{meta.offers.map((offer:Row,i:number)=><a key={i} href={offer.url} target="_blank" rel="noreferrer">{offer.market} · {offer.condition==='new'?'Novo':'Polovno'}{offer.originality==='unconfirmed'?' (originalnost nije potvrđena)':' OEM'} · {marketAmount(Number(offer.price),offer.currency,offer.market,offer.eur_rate)!==null?marketMoney(marketAmount(Number(offer.price),offer.currency,offer.market,offer.eur_rate)!,offer.market):'Cijena čeka kurs'}<ExternalLink size={13}/></a>)}<small>EU cijene su u eurima, BiH cijene u KM. Ponude nepoznatog porijekla ne ulaze u procjenu originalnih dijelova.</small></details>}
+ {!item.estimates?.BIH_used?.value&&(localPrice||euReference)&&<div className="info-box"><div><strong>Okvirna vrijednost polovnog dijela · {marketMoney(localPrice?.median??euReference,'BIH')}</strong>
+ <div>{localPrice?(localPrice.type==='sale'?'Ostvarene prodaje istog broja dijela':localPrice.type==='asking'?'Tražene cijene istog broja dijela u skladištu':'Prodaje dijelova istog naziva, kategorije i vozila s drugim brojem dijela')+
+ ' · medijan. Broj artikala u posljednjih 12 mjeseci: '+localPrice.count+'.':
+ 'Orijentir prema EU ponudama originalnog polovnog dijela, preračunat u KM. Lokalna tržišna cijena može odstupati.'}</div></div></div>} {meta?.offers?.length>0&&<details className="sources" open><summary>Pronađene ponude ({meta.offers.length})</summary>{meta.offers.map((offer:Row,i:number)=><a key={i} href={offer.url} target="_blank" rel="noreferrer">{offer.market} · {offer.condition==='new'?'Novo':'Polovno'}{offer.originality==='unconfirmed'?' (originalnost nije potvrđena)':' OEM'} · {marketAmount(Number(offer.price),offer.currency,offer.market,offer.eur_rate)!==null?marketMoney(marketAmount(Number(offer.price),offer.currency,offer.market,offer.eur_rate)!,offer.market):'Cijena čeka kurs'}<ExternalLink size={13}/></a>)}<small>EU cijene su u eurima, BiH cijene u KM. Ponude nepoznatog porijekla ne ulaze u procjenu originalnih dijelova.</small></details>}
  {item.sources?.length>0&&<details className="sources"><summary>Izvori i ponude</summary>{item.sources.map((s:Row,i:number)=><a key={i} href={s.url} target="_blank" rel="noreferrer">{s.title}<ExternalLink size={13}/></a>)}</details>}
  {canRetry&&<button type="button" className="secondary full internet-search-button" disabled={busy||(pending&&!stale)} onClick={()=>onRetry()}>{busy||pending&&!stale?<LoaderCircle className="spin" size={16}/>:<Search size={16}/>}<span>{busy||pending&&!stale?'Pretraživanje...':'Pretraži Internet'}</span></button>}
  </section>;

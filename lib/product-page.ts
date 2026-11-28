@@ -27,7 +27,7 @@ export function parseProductPage(html:string,url:string,number:string,strictNumb
  const description=product?text(String(product.description||'')):meta['og:description']||meta.description||'';
  const images=(product?.image?[product.image].flat().map(im=>typeof im==='object'?im?.url:im):[meta['og:image']]).map(im=>imageUrl(im,url)).filter(Boolean).slice(0,3);
  const structuredOffers=product?[product.offers].flat().filter(Boolean):[];
- return {url,title:String(product?.name||title),description,text:text(html).slice(0,120000),images,structuredOffers};
+ return {url,productNumber:String(product?.mpn||product?.productID||product?.sku||''),title:String(product?.name||title),description,text:text(html).slice(0,120000),images,structuredOffers};
 }
 async function loadPublicResource(url:string,image=false){
  const deadline=Date.now()+8000;

@@ -4,6 +4,25 @@ import {verifiedOemOffer,verifiedListingPrice,listingOriginality,isGenuineOem,co
 import {euroRates} from './exchange';
 import {categories,normalize,partNumberVariants} from './shared';
 
+// Read seller-published product offers even when the search summary omits the price.
+export function productPrice(page:any,number:string){
+ if(!page||!page.productNumber||normalize(page.productNumber)!==normalize(number))return null;
+ const description=page.title+' '+page.description;
+ if(!isGenuineOem(description)||listingOriginality('',description)==='aftermarket'||
+    /damaged|broken|refurb|repair|oštećen|ostecen|defekt|bundle|sold as a pair/i.test(description))return null;
+ const host=new URL(page.url).hostname.toLowerCase();
+ const market=host.endsWith('.ba')?'BIH':/\.(?:de|fr|it|es|nl|be|at|pl|cz|sk|si|hr|lt|lv|ee|fi|se|dk|ie|pt|gr|ro|bg|hu)$/.test(host)?'EU':null;
+ if(!market)return null;
+ const listings=(page.structuredOffers||[]).filter((offer:any)=>offer&&
+   !/outofstock|discontinued|soldout/i.test(offer.availability||'')&&
+   ['EUR','BAM'].includes(offer.priceCurrency)&&Number(offer.price)>0&&Number(offer.price)<100000&&
+   conditionFrom(offer.itemCondition));
+ // Multiple variants or prices on one page cannot establish a single unit price.
+ if(listings.length!==1)return null;
+ const offer=listings[0];
+ return {market,condition:conditionFrom(offer.itemCondition),price:Number(offer.price),currency:offer.priceCurrency,
+  url:page.url,originality:'original',verified_original_oem:true,verification:'product_page'};
+}
 export function parseLookupJson(raw:string){
  const clean=raw.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
  return JSON.parse(clean);
@@ -139,7 +158,12 @@ Up to 8 individual offers, 3 images. OEM means the vehicle manufacturer's factor
  if(!['EUR','BAM'].includes(o.currency)){const rate=fx?.rates[o.currency];if(!rate)return [];return [{...offer,original_price:o.price,original_currency:o.currency,fx_date:fx!.date,price:Math.round(o.price/rate*100)/100,currency:'EUR'}];}
  return [offer];
  });
- const photos=[...pages.flatMap(p=>p.page?.images||[]),...imageChecks.filter((url):url is string=>!!url),...supportedImageUrls].filter((url:string,index:number,all:string[])=>all.indexOf(url)===index).slice(0,3);
+ for(const {page} of pages){
+  const price=productPrice(page,number);
+  if(price&&!referenceOffers.some(o=>o.url===price.url)){
+   referenceOffers.push(price);offers.push(price);
+  }
+ } const photos=[...pages.flatMap(p=>p.page?.images||[]),...imageChecks.filter((url):url is string=>!!url),...supportedImageUrls].filter((url:string,index:number,all:string[])=>all.indexOf(url)===index).slice(0,3);
  return {...result,offers,reference_offers:referenceOffers,photo:photos[0]||null,photos_reference:photos};
  }catch{return {name:'',vehicle:'',category:'Ostali dijelovi',photo:null,offers:[],sources,verified:false};}
  }catch(e:any){if(e.name==='TimeoutError'||e.name==='AbortError')throw Object.assign(Error('Pretraga traje duže nego obično. Pokušajte ponovo.'),{status:504});throw e;}
