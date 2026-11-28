@@ -16,11 +16,11 @@ export function productPrice(page:any,number:string){
  const listings=(page.structuredOffers||[]).filter((offer:any)=>offer&&
    !/outofstock|discontinued|soldout/i.test(offer.availability||'')&&
    ['EUR','BAM'].includes(offer.priceCurrency)&&Number(offer.price)>0&&Number(offer.price)<100000&&
-   conditionFrom(offer.itemCondition));
+   conditionFrom(offer.itemCondition||page.title));
  // Multiple variants or prices on one page cannot establish a single unit price.
  if(listings.length!==1)return null;
  const offer=listings[0];
- return {market,condition:conditionFrom(offer.itemCondition),price:Number(offer.price),currency:offer.priceCurrency,
+ return {market,condition:conditionFrom(offer.itemCondition||page.title),price:Number(offer.price),currency:offer.priceCurrency,
   url:page.url,originality:'original',verified_original_oem:true,verification:'product_page'};
 }
 export function parseLookupJson(raw:string){
@@ -119,10 +119,12 @@ Up to 8 individual offers, 3 images. OEM means the vehicle manufacturer's factor
  // A shorter search-only retry avoids treating an ungrounded model answer as evidence.
  if(!sources.length){found=await generate((identityOnly?identityPrompt+'\n':instructions+'\nYou must execute Google Search and cite actual sources.\n')+`Search Google for "${variants[0]}"${variants[1]?' and "'+variants[1]+'"':''}. Identify this exact automotive part and cite sources. Follow only the output format requested above. Do not answer from memory.`,true);sources=groundedSources(found.candidate);}
  if(!sources.length)return {name:'',vehicle:'',category:'Ostali dijelovi',photo:null,offers:[],sources:[],verified:false};
- // A targeted local search gets its own query when broad research finds only EU offers.
- if(!identityOnly&&!/OFFER\|[^\n|]+\|BIH\|/.test(found.text)&&Date.now()-started<23000){
+ // Check usable cited local offers separately for both conditions.
+ const initialRows=identityOnly?null:parseMarketLines(found.text,found.candidate,number,sources);
+ const missing=['new','used'].filter(condition=>!initialRows?.offers.some(o=>o.market==='BIH'&&o.condition===condition&&o.originality==='original'));
+ if(!identityOnly&&missing.length&&Date.now()-started<35000){
   try{
-   const local=await generate(instructions+'\nFOCUS ONLY ON BOSNIA AND HERZEGOVINA in this search. Search site:olx.ba "'+variants[0]+'" and "'+(variants[1]||variants[0])+'" cijena KM, and local auto-otpad shops. Return only actual exact-number BIH OFFER and IMAGE rows, plus IDENTITY. Never replace the suffix or estimate a BiH price from EU offers. If no explicit price is available omit the offer.',true,AbortSignal.any([signal,AbortSignal.timeout(12000)]));
+   const local=await generate(instructions+'\nFOCUS ONLY ON BOSNIA AND HERZEGOVINA. Missing conditions: '+missing.join(', ')+'. Search separately for each. Try the Bosnian component name, vehicle generation, side and lighting technology as search terms even if the title omits the OEM number. Verify the full OEM including suffix in the listing or linked catalogue before emitting an OFFER. For new search genuine parts retailers and dealer webshops, for used search local dismantlers and site:olx.ba "'+variants[0]+'" and "'+(variants[1]||variants[0])+'" cijena KM, and local auto-otpad shops. Return only actual exact-number BIH OFFER and IMAGE rows, plus IDENTITY. Never replace the suffix or estimate a BiH price from EU offers. If no explicit price is available omit the offer.',true,AbortSignal.any([signal,AbortSignal.timeout(12000)]));
    const previous=found.candidate?.groundingMetadata||{},extra=local.candidate?.groundingMetadata||{},offset=(previous.groundingChunks||[]).length;
    if(extra.groundingChunks?.length){found={text:found.text+'\n'+local.text.split(/\r?\n/).filter((line:string)=>/^OFFER\|[^|]+\|BIH\|/.test(line.trim())).join('\n'),candidate:{...found.candidate,groundingMetadata:{groundingChunks:[...(previous.groundingChunks||[]),...extra.groundingChunks],groundingSupports:[...(previous.groundingSupports||[]),...(extra.groundingSupports||[]).map((s:any)=>({...s,groundingChunkIndices:(s.groundingChunkIndices||[]).map((i:number)=>i+offset)}))]}}};sources=groundedSources(found.candidate);}
   }catch{/* Preserve the first search if the supplementary local search is unavailable. */}
@@ -137,7 +139,8 @@ Up to 8 individual offers, 3 images. OEM means the vehicle manufacturer's factor
  try{
  const result:any=marketRows||validateExtraction(parseLookupJson(extracted!.text),found.text,sources,number);
  if(!result.verified||identityOnly)return {...result,photo:null,photos_reference:[],offers:[]};
- const indexes=[...new Set<number>([...result.offers.map((o:any)=>o.source_index),...sources.map((s:any)=>s.index)])].slice(0,6);
+ const localSources=sources.filter((s:any)=>/\.ba\b/i.test(s.title)||new URL(s.url).hostname.endsWith('.ba'));
+ const indexes=[...new Set<number>([...result.offers.filter((o:any)=>o.market==='BIH').map((o:any)=>o.source_index),...localSources.slice(0,3).map((s:any)=>s.index),...result.offers.map((o:any)=>o.source_index),...sources.map((s:any)=>s.index)])].slice(0,6);
  const supportedImageUrls=[...groundedImageCandidates(found.text,sources,found.candidate?.groundingMetadata?.groundingSupports||[],number),...selectReferenceImages(result,found.text,sources,number).filter((url:string)=>(found.candidate?.groundingMetadata?.groundingSupports||[]).some((support:any)=>String(support.segment?.text||'').includes(url)&&containsPartNumber(support.segment?.text||'',number)&&support.groundingChunkIndices?.includes(result.images?.find((im:any)=>im.url===url)?.source_index)))];
  const [pages,imageChecks,fx]=await Promise.all([
  Promise.all(indexes.map(async index=>{const source=sources.find((s:any)=>s.index===index);const urls=[...productLinksForSource(source,found.text,number),source.url];const loaded=await Promise.all([...new Set(urls)].map(url=>loadProductPage(url,number)));return {index,page:loaded.find(Boolean)||null};})),

@@ -24,6 +24,8 @@ const offerSchema=z.object({market:z.enum(['EU','BIH']),condition:z.enum(['new',
 const valuationFields=`id,normalized,status,name,category,vehicle,price,sold_price,
  COALESCE(estimates->>'_scan_fitment','')<>'pending' AS eligible,
  coalesce(sold_at,created_at)>now()-interval '1 year' AS recent,
+ CASE WHEN estimates->'EU_new'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'EU_new'->'value')='number' THEN (estimates->'EU_new'->>'value')::numeric END AS new_eu,
+ CASE WHEN estimates->'BIH_new'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'BIH_new'->'value')='number' THEN (estimates->'BIH_new'->>'value')::numeric END AS new_bih,
  CASE WHEN estimates->'BIH_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'BIH_used'->'value')='number' THEN (estimates->'BIH_used'->>'value')::numeric END AS bih,
  CASE WHEN estimates->'EU_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'EU_used'->'value')='number' THEN (estimates->'EU_used'->>'value')::numeric END AS eu`;
 const partSchema=z.object({visual_vehicle:z.string().trim().max(80).optional(),scan_entry:z.boolean().default(false),markings:z.array(z.string().trim().min(1).max(60)).max(15).default([]),enrich_after_save:z.boolean().default(false),part_number:z.string().trim().min(3).max(60).refine(v=>normalize(v).length>=3),name:z.string().trim().min(2).max(180),vehicle:z.string().trim().min(2).max(250),category:z.enum(categories),color:z.string().trim().max(60),owner_id:uuid,price:amount,estimates:z.partialRecord(z.enum(['EU_new','EU_used','BIH_new','BIH_used']),z.object({value:amount,count:z.number().int().min(0).max(1000),offers:z.array(offerSchema).max(100).optional(),basis:z.literal('verified_original_oem').optional(),confidence:z.enum(['single_offer','sample_average']).optional(),warning:z.string().max(200).optional()}).optional()).default({}),sources:z.array(z.object({title:z.string().max(200),url:safeLink})).max(12).default([])});
@@ -61,7 +63,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  await transaction(async c=>{await c.query('UPDATE parts_app.users SET password=$1,must_change=false WHERE id=$2',[hash(password),me.id]);await c.query('DELETE FROM parts_app.sessions WHERE user_id=$1',[me.id]);});await session(me.id);return json({ok:true});
  }
  if(me.must_change)fail('Prvo promijenite početnu lozinku.',403);
- if(route==='users'&&method==='GET'){return json((await db.query("SELECT id,username,must_change FROM parts_app.users WHERE active AND lower(username)<>'administrator' ORDER BY lower(username)")).rows);}
+ if(route==='users'&&method==='GET'){return json((await db.query("SELECT id,username,must_change FROM parts_app.users WHERE active AND lower(username)<>'administrator' ORDER BY lower(username)")).rows.map(row=>({...row,role:accountRole(row.username)})));}
  if(route==='users'&&method==='POST'){
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
  if(accountRole(username)==='System Admin'&&accountRole(me.username)!=='System Admin')fail('Samo sistemski administrator može dodati administratorski račun.',403);

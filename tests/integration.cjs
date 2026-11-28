@@ -172,6 +172,7 @@ try{
  for(const [name,previous,next] of [['Irnes',100,110],['Adem',110,120],['Alen',120,130]]){
   const account=(await pool.query('INSERT INTO parts_app.users(username,password,must_change) VALUES($1,$2,false) ON CONFLICT (lower(username)) DO UPDATE SET password=excluded.password,must_change=false RETURNING id',[name,hash('roleTest123')])).rows[0];
   const session=makeJar();assert.equal((await call('login',{username:name,password:'roleTest123'},{jar:session})).status,200);
+  check((await call('users',undefined,{jar:session})).body.find(u=>u.username===name)?.role===(name==='Alen'?'Moderator':'System Admin'),name+' has the correct role in the users list');
   const update=()=>call(itemRoute+'/price',{price:next,expected_price:previous},{jar:session});
   check((await update()).status===(name==='Alen'?403:200),name+' price permissions on another holder item');
   check((await call(itemRoute+'/sell',{price:next},{jar:session})).status===409,name+' cannot sell another holder item');

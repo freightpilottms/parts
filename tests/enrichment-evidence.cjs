@@ -45,5 +45,20 @@ global.fetch=async(url,options)=>Response.json({candidates:[JSON.parse(options.b
  let localQueries=0;
  global.fetch=async(url,options)=>{const prompt=JSON.parse(options.body).contents[0].parts[0].text;if(prompt.includes('FOCUS ONLY ON BOSNIA')){localQueries++;return Response.json({candidates:[{content:{parts:[{text:localRow}]},groundingMetadata:{groundingChunks:[{web:{uri:'https://local.example/artikal/42',title:'local.example'}}],groundingSupports:[{segment:{text:localRow},groundingChunkIndices:[0]}]}}]});}return Response.json({candidates:[{...rowCandidate,content:{parts:[{text:rows.join('\n')}]}}]});};
  const withLocal=await geminiLookup(number);assert.equal(localQueries,1);assert.equal(withLocal.reference_offers.find(o=>o.market==='BIH').price,300);assert.equal(withLocal.reference_offers.find(o=>o.market==='BIH').source_index,1,'local source indexes are remapped without changing EU citations');
+ const newRow=localRow.replace('|used|300|BAM|','|novo|1.250,00 KM|KM|').replace('/42|','/43|').replace('used bumper','new bumper');
+ const localCandidate=(text,url)=>({content:{parts:[{text}]},groundingMetadata:{groundingChunks:[{web:{uri:url,title:'local.example'}}],groundingSupports:[{segment:{text:text.split('\n').at(-1)},groundingChunkIndices:[0]}]}});
+ let newSearches=0;
+ global.fetch=async(url,options)=>{
+  const prompt=JSON.parse(options.body).contents[0].parts[0].text;
+  if(prompt.includes('FOCUS ONLY ON BOSNIA')){
+   assert.match(prompt,/Missing conditions: new\./);newSearches++;
+   return Response.json({candidates:[localCandidate(newRow,'https://local.example/artikal/43')]});
+  }
+  return Response.json({candidates:[localCandidate(rows[0]+'\n'+localRow,'https://local.example/artikal/42')]});
+ };
+ const both=await geminiLookup(number);
+ assert.equal(newSearches,1,'a used BiH offer must not suppress search for new OEM');
+ assert.equal(both.reference_offers.find(o=>o.market==='BIH'&&o.condition==='new').price,1250,'localized new listing in KM is parsed correctly');
+ assert.equal(both.reference_offers.find(o=>o.market==='BIH'&&o.condition==='used').price,300);
  console.log('Enrichment evidence checks passed: multiline citations, image attribution, native prices and blocked-page fallback.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

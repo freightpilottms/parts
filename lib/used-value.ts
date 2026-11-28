@@ -42,5 +42,5 @@ export function comparisons(rows:Item[],item:Item){
  const asking=exact.filter(r=>observed(r)&&r.status==='available').map(r=>positive(r.price)).filter(Boolean);
  const similar=peers.filter(r=>r.normalized!==item.normalized&&observed(r)&&r.status==='sold'&&r.category===item.category&&String(r.name).toLowerCase()===String(item.name).toLowerCase()&&String(r.vehicle).toLowerCase()===String(item.vehicle).toLowerCase()).map(r=>positive(r.sold_price)).filter(Boolean);
  const reference:Comparison|null=sales.length?{type:'sale',median:median(sales),count:sales.length}:asking.length?{type:'asking',median:median(asking),count:asking.length}:similar.length>=3?{type:'similar',median:median(similar),count:similar.length}:null;
- return {reference,bih:median(exact.map(r=>positive(r.bih))),eu:median(exact.map(r=>positive(r.eu)))};
+ return {reference,newBih:median(exact.map(r=>positive(r.new_bih))),newEu:median(exact.map(r=>positive(r.new_eu))),bih:median(exact.map(r=>positive(r.bih))),eu:median(exact.map(r=>positive(r.eu)))};
 }

@@ -163,3 +163,7 @@ html { scrollbar-gutter: stable; }
 .inventory .vehicle-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding-top:0}.vehicle-filters select{min-width:0;width:100%;max-width:none}
 
 .vehicle-filters > .sort { grid-column: 1 / -1; }
+
+/* Separate the estimate explanation from the market price cards. */
+.estimate-grid + .valuation-note { margin-block-start: 16px; line-height: 1.5; }
+.valuation-note strong { display: block; margin-block-end: 4px; }

@@ -4,6 +4,12 @@ import {listingOriginality,conditionFrom} from './oem-pricing';
 const clean=(s:unknown)=>String(s||'').replace(/[*`]/g,'').trim();
 const url=(s:string)=>{try{const u=new URL(s);return u.protocol==='https:'&&!u.username&&!u.password?u.href:'';}catch{return '';}};
 
+function parseListingAmount(amount:string){
+ const text=amount.replace(/\s/g,'').replace(/(?:KM|BAM|EUR|€)$/i,'');
+ if(/^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(text))return Number(text.replace(/\./g,'').replace(',','.'));
+ if(/^\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?$/.test(text))return Number(text.replace(/,/g,''));
+ return /^\d+(?:[.,]\d{1,2})?$/.test(text)?Number(text.replace(',','.')):NaN;
+}
 // Grounded rows are parsed directly. No second model needs to reproduce quotations.
 export function parseMarketLines(text:string,candidate:any,number:string,sources:any[]){
  const exactInTitle=(title:string)=>new RegExp('(?<![A-Z0-9])'+normalize(number).split('').join('[\\s-]*')+'(?![A-Z0-9])','i').test(title);
@@ -22,8 +28,10 @@ export function parseMarketLines(text:string,candidate:any,number:string,sources
  for(const line of lines){
   const p=line.split('|').map(clean);if(normalize(p[1]||'')!==normalize(number))continue;
   if(p[0]==='OFFER'&&p.length>=9){
-   const [, ,market,condition,amount,currency,proof,link]=p;
-   const source=sourceFor(line,link),price=Number(amount.replace(',','.'));
+   const [, ,market,state,amount,unit,proof,link]=p;
+   const condition=conditionFrom(state)||state.toLowerCase();
+   const currency=unit.toUpperCase()==='KM'?'BAM':unit.toUpperCase();
+   const source=sourceFor(line,link),price=parseListingAmount(amount);
    if(!source||!['EU','BIH'].includes(market)||!['new','used'].includes(condition)||!['EUR','BAM','CZK','PLN','GBP','CHF','SEK','DKK'].includes(currency)||!Number.isFinite(price)||price<=0||price>10000000)continue;
    if(/damaged|broken|refurb|repair|aftermarket|replica|zamjensk|kopij/i.test(proof+' '+p[8]))continue;
    const originality=listingOriginality(proof,p[8]);if(originality==='aftermarket')continue;

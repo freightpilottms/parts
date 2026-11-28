@@ -14,11 +14,11 @@ async function performLookup(number:string,refresh:boolean,identityOnly:boolean,
  const known=await db.query("SELECT i.*, (SELECT id FROM parts_app.photos p WHERE p.item_id=i.id ORDER BY created_at LIMIT 1) photo_id FROM parts_app.items i WHERE normalized=$1 AND COALESCE(i.estimates->>'_scan_fitment','')<>'pending' ORDER BY created_at DESC LIMIT 1",[key]);
  if(known.rows.length&&!refresh&&!skipKnown){const i=known.rows[0];const storedEstimates=Object.fromEntries(Object.entries(i.estimates||{}).filter(([,v]:any)=>v?.basis==='verified_original_oem'));return {...i,enrich_after_save:identityOnly,photos_reference:i.estimates?._enrichment?.images||[],estimates:storedEstimates,photo:i.photo_id?`/api/photos/${i.photo_id}`:i.estimates?._enrichment?.images?.[0]||null,origin:'database',message:'Pronađeno u vašoj bazi. Provjerite podatke za novi primjerak.'};}
  const provider=process.env.AI_PROVIDER||(process.env.OPENAI_API_KEY?'openai':process.env.GEMINI_API_KEY?'gemini':'web');
- const cacheKey=(identityOnly?'v6-bs-identity:':'v10-product-prices:')+key+':'+provider+':'+(provider==='openai'?(process.env.OPENAI_MODEL||'gpt-5-mini'):(process.env.GEMINI_MODEL||'gemini-3.8-flash'));
+ const cacheKey=(identityOnly?'v6-bs-identity:':'v11-bih-conditions:')+key+':'+provider+':'+(provider==='openai'?(process.env.OPENAI_MODEL||'gpt-5-mini'):(process.env.GEMINI_MODEL||'gemini-3.8-flash'));
  const cached=await db.query('SELECT data FROM parts_app.lookup_cache WHERE normalized=$1 AND expires>now()',[cacheKey]);if(cached.rows[0]&&!refresh&&(identityOnly||(cached.rows[0].data.photos_reference?.length||Object.keys(cached.rows[0].data.estimates||{}).length)))return {...cached.rows[0].data,origin:'cache'};
  // Reuse identity from recent full research instead of paying for another search.
  if(identityOnly&&!refresh){
-  const marketKey=cacheKey.replace('v6-bs-identity:','v10-product-prices:');
+  const marketKey=cacheKey.replace('v6-bs-identity:','v11-bih-conditions:');
   const market=await db.query('SELECT data FROM parts_app.lookup_cache WHERE normalized=$1 AND expires>now()',[marketKey]);
   const data=market.rows[0]?.data;
   if(data?.name&&data?.vehicle)return {...data,estimates:{},reference_offers:[],photo:null,photos_reference:[],origin:'cache',enrich_after_save:true,message:'Dio je pronađen. Unesite prodajnu cijenu i objavite artikal. Slike i tržišne cijene dopunjavaju se nakon objave.'};
