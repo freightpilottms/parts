@@ -3,3 +3,10 @@ export const normalize=(v:string)=>v.toUpperCase().replace(/[^A-Z0-9]/g,'');
 export const money=(v:number|string)=>new Intl.NumberFormat('bs-BA',{style:'currency',currency:'BAM'}).format(Number(v));
 
 export const partNumberVariants=(value:string)=>{const key=normalize(value);const match=key.match(/^([A-Z0-9]{3})([0-9]{3})([0-9]{3})([A-Z]{0,3})$/);return match?[key,match.slice(1).filter(Boolean).join(' ')]:[key];};
+
+export function accountRole(username:string){
+ return ['administrator','irnes','adem'].includes(username.toLowerCase())?'System Admin':'Moderator';
+}
+export function canChangePrice(username:string,userId:string,ownerId:string){
+ return userId===ownerId||accountRole(username)==='System Admin';
+}

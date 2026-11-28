@@ -1,3 +1,4 @@
+import {comparisons,usedValue} from '@/lib/used-value';
 import {vehicleCatalog} from '@/lib/vehicle-filters';
 import {cachedScanFitment,scanFitment} from '@/lib/scan-fitment';
 import {scanPart} from '@/lib/scan-part';
@@ -9,7 +10,7 @@ import {z} from 'zod';
 import sharp from 'sharp';
 import {db,transaction} from '@/lib/db';
 import {user,session,verify,hash,digest,rate} from '@/lib/auth';
-import {categories,normalize} from '@/lib/shared';
+import {categories,normalize,accountRole,canChangePrice} from '@/lib/shared';
 import {enrichItem} from '@/lib/enrichment';
 import {lookup} from '@/lib/lookup';
 import {inventoryCsv,inventoryXlsx,inventoryPrint} from '@/lib/inventory-export';
@@ -20,6 +21,11 @@ const amount=z.coerce.number().finite().min(0).max(99999999);
 const uuid=z.string().uuid();
 const safeLink=z.url().refine(v=>v.startsWith('https://'));
 const offerSchema=z.object({market:z.enum(['EU','BIH']),condition:z.enum(['new','used']),price:amount,currency:z.enum(['EUR','BAM']),url:safeLink});
+const valuationFields=`id,normalized,status,name,category,vehicle,price,sold_price,
+ COALESCE(estimates->>'_scan_fitment','')<>'pending' AS eligible,
+ coalesce(sold_at,created_at)>now()-interval '1 year' AS recent,
+ CASE WHEN estimates->'BIH_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'BIH_used'->'value')='number' THEN (estimates->'BIH_used'->>'value')::numeric END AS bih,
+ CASE WHEN estimates->'EU_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'EU_used'->'value')='number' THEN (estimates->'EU_used'->>'value')::numeric END AS eu`;
 const partSchema=z.object({visual_vehicle:z.string().trim().max(80).optional(),scan_entry:z.boolean().default(false),markings:z.array(z.string().trim().min(1).max(60)).max(15).default([]),enrich_after_save:z.boolean().default(false),part_number:z.string().trim().min(3).max(60).refine(v=>normalize(v).length>=3),name:z.string().trim().min(2).max(180),vehicle:z.string().trim().min(2).max(250),category:z.enum(categories),color:z.string().trim().max(60),owner_id:uuid,price:amount,estimates:z.partialRecord(z.enum(['EU_new','EU_used','BIH_new','BIH_used']),z.object({value:amount,count:z.number().int().min(0).max(1000),offers:z.array(offerSchema).max(100).optional(),basis:z.literal('verified_original_oem').optional(),confidence:z.enum(['single_offer','sample_average']).optional(),warning:z.string().max(200).optional()}).optional()).default({}),sources:z.array(z.object({title:z.string().max(200),url:safeLink})).max(12).default([])});
 function makeThumbnail(bytes:Buffer){
  return sharp(bytes).resize(240,240,{fit:'inside',withoutEnlargement:true})
@@ -58,6 +64,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  if(route==='users'&&method==='GET'){return json((await db.query("SELECT id,username,must_change FROM parts_app.users WHERE active AND lower(username)<>'administrator' ORDER BY lower(username)")).rows);}
  if(route==='users'&&method==='POST'){
  const {username}=z.object({username:z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} _.-]+$/u)}).parse(await body(req));
+ if(accountRole(username)==='System Admin'&&accountRole(me.username)!=='System Admin')fail('Samo sistemski administrator može dodati administratorski račun.',403);
  if(['juso','almin'].includes(username.toLowerCase()))fail('Ovo korisničko ime je povučeno.',400);
  const row=await transaction(async c=>{const r=await c.query('INSERT INTO parts_app.users(username,password) VALUES($1,$2) RETURNING id,username',[username,hash(({irnes:'Irnes',alen:'Alen'} as Record<string,string>)[username.toLowerCase()]?.concat('1234')||'1234')]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'user',$2)",[me.id,JSON.stringify({username})]);return r.rows[0];});return json(row,201);
  }
@@ -74,28 +81,9 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
   const id=params.get('id')?uuid.parse(params.get('id')):null;
   const name=(params.get('name')||'').trim().slice(0,180), vehicle=(params.get('vehicle')||'').trim().slice(0,250);
   const category=(params.get('category')||'').slice(0,100);
-  const samples=await db.query(`SELECT normalized=$1 AS exact,status,
-    CASE WHEN status='sold' THEN sold_price ELSE price END AS amount
-    FROM parts_app.items WHERE ($2::uuid IS NULL OR id<>$2)
-    AND COALESCE(estimates->>'_scan_fitment','')<>'pending'
-    AND (normalized=$1 OR (status='sold' AND category=$5 AND lower(name)=lower($3) AND lower(vehicle)=lower($4)))
-    AND CASE WHEN status='sold' THEN sold_price>0 AND sold_at>now()-interval '1 year'
-             ELSE price>0 AND created_at>now()-interval '1 year' END
-    ORDER BY (normalized=$1) DESC,(status='sold') DESC,coalesce(sold_at,created_at) DESC LIMIT 100`,
-    [number,id,name,vehicle,category]);
-  const groups=[
-   {type:'sale',rows:samples.rows.filter(r=>r.exact&&r.status==='sold')},
-   {type:'asking',rows:samples.rows.filter(r=>r.exact&&r.status==='available')},
-   {type:'similar',rows:samples.rows.filter(r=>!r.exact&&r.status==='sold')}
-  ];
-  for(const group of groups){
-   const prices=group.rows.map(r=>Number(r.amount)).sort((a,b)=>a-b);
-   if(prices.length<(group.type==='similar'?3:1))continue;
-   const middle=Math.floor(prices.length/2);
-   const median=prices.length%2?prices[middle]:(prices[middle-1]+prices[middle])/2;
-   return json({reference:{type:group.type,median,count:prices.length}});
-  }
-  return json({reference:null});
+  const samples=await db.query(`SELECT ${valuationFields} FROM parts_app.items WHERE
+    normalized=$1 OR (status='sold' AND category=$2 AND lower(name)=lower($3) AND lower(vehicle)=lower($4))`,[number,category,name,vehicle]);
+  return json(comparisons(samples.rows,{id,normalized:number,category,name,vehicle}));
  }
  if(route==='lookup'&&method==='GET'){const number=z.string().trim().min(3).max(60).parse(req.nextUrl.searchParams.get('number'));if(req.nextUrl.searchParams.get('mode')==='scan')return json(await scanFitment(number,()=>rate('lookup-minute:'+me.id,20,60)));return json(await lookup(number,req.nextUrl.searchParams.get('refresh')==='1',req.nextUrl.searchParams.get('mode')!=='full',false,()=>rate('lookup-minute:'+me.id,20,60)));}
  if((route==='items'||route==='items/export')&&method==='GET'){
@@ -176,7 +164,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
   await transaction(async c=>{
    const item=(await c.query('SELECT price,status,owner_id FROM parts_app.items WHERE id=$1 FOR UPDATE',[id])).rows[0];
    if(!item)fail('Artikal ne postoji.',404);
-   if(item.owner_id!==me.id)fail('Cijenu može promijeniti korisnik kod kojeg je artikal.',403);
+   if(!canChangePrice(me.username,me.id,item.owner_id))fail('Cijenu može promijeniti sistemski administrator ili korisnik kod kojeg je artikal.',403);
    if(item.status!=='available')fail('Artikal je već prodan.',409);
    if(Number(item.price)===input.price)return;
    if(Number(item.price)!==input.expected_price)fail('Cijena se u međuvremenu promijenila. Provjerite trenutni iznos.',409);
@@ -237,32 +225,31 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  }
  if(route==='stats'&&method==='GET'){
  // Market estimates are stored in KM for both regions. Each available physical item contributes once.
- const r=await db.query(`WITH priced AS (
-   SELECT normalized,status,price,sold_price,COALESCE(estimates->>'_scan_fitment','')<>'pending' AS eligible,
-    CASE WHEN estimates->'BIH_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'BIH_used'->'value')='number'
-         THEN (estimates->'BIH_used'->>'value')::numeric END AS bih,
-    CASE WHEN estimates->'EU_used'->>'basis'='verified_original_oem' AND jsonb_typeof(estimates->'EU_used'->'value')='number'
-         THEN (estimates->'EU_used'->>'value')::numeric END AS eu
-   FROM parts_app.items
- ), comparable AS (
-   SELECT normalized,
-    percentile_cont(0.5) WITHIN GROUP (ORDER BY bih) FILTER (WHERE bih>0) AS bih_reference,
-    percentile_cont(0.5) WITHIN GROUP (ORDER BY sold_price) FILTER (WHERE status='sold' AND sold_price>0) AS sale_reference,
-    percentile_cont(0.5) WITHIN GROUP (ORDER BY eu) FILTER (WHERE eu>0) AS eu_reference
-   FROM priced WHERE eligible AND normalized<>'' GROUP BY normalized
- ), valued AS (
-   SELECT p.*,CASE WHEN eligible THEN round(COALESCE(CASE WHEN bih>0 THEN bih END,bih_reference,sale_reference,
-      CASE WHEN eu>0 THEN eu END,eu_reference)::numeric,2) END AS estimated
-   FROM priced p LEFT JOIN comparable USING (normalized)
- )
- SELECT count(*) FILTER (WHERE status='available') available, count(*) FILTER (WHERE status='sold') sold,
-  COALESCE(sum(sold_price) FILTER (WHERE status='sold'),0) revenue,
-  COALESCE(sum(price) FILTER (WHERE status='available'),0) asking_total,
-  COALESCE(sum(estimated) FILTER (WHERE status='available'),0) inventory,
-  count(estimated) FILTER (WHERE status='available') valued_count,
-  count(*) FILTER (WHERE status='available' AND estimated IS NULL) missing
- FROM valued`);
- const cats=await db.query("SELECT category,count(*) FROM parts_app.items WHERE status='available' GROUP BY category ORDER BY category");const costs=(await db.query('SELECT goods,transport FROM parts_app.costs WHERE id=1')).rows[0];return json({...r.rows[0],categories:cats.rows,costs,profit:Number(r.rows[0].revenue)-Number(costs.goods)-Number(costs.transport)});
+ const {rows}=await db.query(`SELECT ${valuationFields} FROM parts_app.items`);
+ const byNumber=new Map<string,typeof rows>(),byDescription=new Map<string,typeof rows>();
+ const description=(r:Record<string,any>)=>JSON.stringify([r.category,r.name.toLowerCase(),r.vehicle.toLowerCase()]);
+ for(const row of rows){
+  if(!row.eligible)continue;
+  if(!byNumber.has(row.normalized))byNumber.set(row.normalized,[]);
+  byNumber.get(row.normalized)!.push(row);
+  if(row.recent&&row.status==='sold'&&Number(row.sold_price)>0){
+   const key=description(row);
+   if(!byDescription.has(key))byDescription.set(key,[]);
+   byDescription.get(key)!.push(row);
+  }
+ }
+ const totals={available:0,sold:0,revenue:0,asking_total:0,inventory:0,valued_count:0,missing:0};
+ for(const row of rows){
+  if(row.status==='sold'){totals.sold++;totals.revenue+=Number(row.sold_price);continue;}
+  totals.available++;totals.asking_total+=Number(row.price);
+  if(!row.eligible){totals.missing++;continue;}
+  const peers=[...(byNumber.get(row.normalized)||[]),...(byDescription.get(description(row))||[]).filter(r=>r.normalized!==row.normalized)];
+  const comparison=comparisons(peers,row);
+  const estimated=usedValue(row,comparison.reference,Number(row.bih)||comparison.bih,Number(row.eu)||comparison.eu);
+  if(estimated){totals.inventory+=Math.round(estimated.value*100);totals.valued_count++;}else totals.missing++;
+ }
+ totals.inventory/=100;
+ const cats=await db.query("SELECT category,count(*) FROM parts_app.items WHERE status='available' GROUP BY category ORDER BY category");const costs=(await db.query('SELECT goods,transport FROM parts_app.costs WHERE id=1')).rows[0];return json({...totals,categories:cats.rows,costs,profit:totals.revenue-Number(costs.goods)-Number(costs.transport)});
  }
  if(route==='costs'&&method==='POST'){
  const input=z.object({goods:amount,transport:amount}).parse(await body(req));await transaction(async c=>{await c.query('UPDATE parts_app.costs SET goods=$1,transport=$2 WHERE id=1',[input.goods,input.transport]);await c.query("INSERT INTO parts_app.activity(user_id,action,details) VALUES($1,'costs',$2)",[me.id,JSON.stringify(input)]);});return json({ok:true});

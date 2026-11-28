@@ -167,6 +167,20 @@ try{
  await pool.query("UPDATE parts_app.users SET password=$1,must_change=false WHERE username='Irnes'",[hash('personal123')]);
  await pool.query(migration);
  check((await call('login',{username:'Irnes',password:'personal123'},{jar:makeJar()})).status===200,'reapplying migration preserves changed password');
+ const adminPart=await call('items',{...item,part_number:'ROLE-TEST',name:'Test ovlaštenja',price:100});
+ const itemRoute='items/'+adminPart.body.id;
+ for(const [name,previous,next] of [['Irnes',100,110],['Adem',110,120],['Alen',120,130]]){
+  const account=(await pool.query('INSERT INTO parts_app.users(username,password,must_change) VALUES($1,$2,false) ON CONFLICT (lower(username)) DO UPDATE SET password=excluded.password,must_change=false RETURNING id',[name,hash('roleTest123')])).rows[0];
+  const session=makeJar();assert.equal((await call('login',{username:name,password:'roleTest123'},{jar:session})).status,200);
+  const update=()=>call(itemRoute+'/price',{price:next,expected_price:previous},{jar:session});
+  check((await update()).status===(name==='Alen'?403:200),name+' price permissions on another holder item');
+  check((await call(itemRoute+'/sell',{price:next},{jar:session})).status===409,name+' cannot sell another holder item');
+  if(name==='Alen'){
+   check((await call(itemRoute+'/owner',{owner_id:account.id,expected_owner_id:me.id},{jar:session})).status===200,'Alen can take custody as moderator');
+   check((await update()).status===200,'Alen can reprice after taking custody');
+   assert.equal((await call(itemRoute+'/sell',{price:next},{jar:session})).status,200);
+  }
+ }
  check((await call('scan',{}, {jar:makeJar()})).status===401,'photo recognition requires sign-in');
  const {resolveScanSide}=require('../lib/scan-orientation.ts');
  for(const [name,category,view,label,expectedName,expectedCategory] of [
@@ -181,6 +195,14 @@ try{
   const resolved=resolveScanSide(name,category,view,label);
   check(resolved.name===expectedName&&resolved.category===expectedCategory,'photo side: '+view+' / '+label+' -> '+expectedName);
  }
+ const {usedValue}=require('../lib/used-value.ts');
+ const lamp={category:'Lijevi far',name:'Lijevi far H7',vehicle:'Golf 2016',price:470};
+ check(usedValue(lamp,null,0,0).value===440,'H7 2015+ estimate blends the midpoint and asking price');
+ check(usedValue({...lamp,vehicle:'Golf 2012'},null,0,0).value===470,'older H7 uses the asking price');
+ check(usedValue({...lamp,name:'Far Bi-xenon',price:0},null,0,0).value===800,'bi-xenon midpoint without asking price');
+ check(usedValue({...lamp,name:'Matrix far',price:0},null,0,0).value===2000,'matrix midpoint without asking price');
+ check(usedValue({...lamp,name:'Modul Matrix fara',price:0},null,0,0)===null,'matrix module excluded from complete headlight benchmark');
+ check(usedValue(lamp,null,650,0).value===650,'observed exact local OEM evidence takes priority');
  const financeBefore=(await call('stats')).body;
  const estimate=value=>({value,count:1,basis:'verified_original_oem'});
  async function stock(number,price,estimates={}){
@@ -198,12 +220,12 @@ try{
  await stock('FIN789',0,{EU_used:estimate(195.58)});
  const unknown=await stock('FIN999',75,{BIH_new:estimate(900),BIH_used:{value:500,count:1}});
  const finance=(await call('stats')).body;
- check(Math.abs(finance.inventory-financeBefore.inventory-1495.58)<0.001,'stock value prefers local verified used prices then median positive sales then EU used in KM');
- check(finance.valued_count-financeBefore.valued_count===5&&finance.missing-financeBefore.missing===1,'coverage includes same-number references and excludes unsupported estimates');
+ check(Math.abs(finance.inventory-financeBefore.inventory-1570.58)<0.001,'stock value prefers local verified used prices then median positive sales then EU used in KM');
+ check(finance.valued_count-financeBefore.valued_count===6&&finance.missing-financeBefore.missing===0,'coverage includes verified references and the asking-price fallback');
  check(finance.asking_total-financeBefore.asking_total===725&&finance.revenue-financeBefore.revenue===800,'asking total covers available units and actual sales stay in revenue');
  await call('items/'+unknown+'/price',{price:90,expected_price:75});
  const repriced=(await call('stats')).body;
- check(repriced.asking_total-finance.asking_total===15&&repriced.inventory===finance.inventory,'repricing changes asking total independently of market value');
+ check(repriced.asking_total-finance.asking_total===15&&Math.abs(repriced.inventory-finance.inventory-15)<0.001,'repricing updates the fallback estimate when only the asking price is known');
  for(const [n,vehicle] of ['VW Golf VII / Passat B8','Volkswagen Golf VIII','Audi A6 / A7 C7 Avant','Vozilo nije utvrđeno'].entries()){
   assert.equal((await call('items',{...item,name:'Filter uzorak',part_number:'FLT'+n,vehicle})).status,201);
  }
