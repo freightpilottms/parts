@@ -5,12 +5,18 @@ import {rate} from './auth';
 // Persist the job before responding; Next after keeps server work alive after response.
 // An atomic claim prevents two callbacks from enriching the same item concurrently.
 export async function enrichItem(id:string,refresh=false){
- const claimed=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment,status}','\"running\"'::jsonb) WHERE id=$1 AND estimates->'_enrichment'->>'status'='pending' RETURNING part_number,estimates,created_by",[id]);
+ const claimed=await db.query("UPDATE parts_app.items SET estimates=jsonb_set(estimates,'{_enrichment,status}','\"running\"'::jsonb) WHERE id=$1 AND COALESCE(estimates->>'_scan_fitment','')<>'pending' AND estimates->'_enrichment'->>'status'='pending' RETURNING part_number,vehicle,estimates,created_by",[id]);
  if(!claimed.rows[0])return;
  try{
   const item=claimed.rows[0];
   const found=await lookup(item.part_number,refresh,false,true,()=>rate('market-minute:'+item.created_by,20,60));
   if(!found.name||!found.vehicle)throw Object.assign(Error('Identity not confirmed'),{reason:'identity'});
+  if(item.estimates?._scan_fitment==='verified'){
+   const words=(value:string)=>' '+value.toLowerCase().replace(/[^\p{L}\d]+/gu,' ').trim()+' ';
+   const multiModel=/\s*[/;|&]\s*(?=[\p{L}])|\b(?:or|ili|and)\b/iu.test(found.vehicle)
+    ||(/\bdiscovery\b/i.test(found.vehicle)&&/\brange rover\b/i.test(found.vehicle));
+   if(multiModel||!words(found.vehicle).includes(words(item.vehicle)))throw Object.assign(Error('Market model differs from catalogue'),{reason:'identity'});
+  }
   const freshImages=[found.photo,...(found.photos_reference||[])].filter((u,i,a)=>typeof u==='string'&&u.startsWith('https://')&&a.indexOf(u)===i).slice(0,3);
   const previous=claimed.rows[0].estimates?._enrichment||{};
   const images=freshImages.length?freshImages:previous.images||[];

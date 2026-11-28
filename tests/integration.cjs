@@ -158,6 +158,19 @@ try{
  await pool.query(migration);
  check((await call('login',{username:'Irnes',password:'personal123'},{jar:makeJar()})).status===200,'reapplying migration preserves changed password');
  check((await call('scan',{}, {jar:makeJar()})).status===401,'photo recognition requires sign-in');
+ const {resolveScanSide}=require('../lib/scan-orientation.ts');
+ for(const [name,category,view,label,expectedName,expectedCategory] of [
+  ['Prednji blatobran','Desni blatobran','fender_nose_left','none','Lijevi prednji blatobran','Lijevi blatobran'],
+  ['Desni far','Desni far','lamp_outer_edge_right','none','Lijevi far','Lijevi far'],
+  ['Far','Ostali dijelovi','unknown','RH','Desni far','Desni far'],
+  ['Lijevi far','Lijevi far','lamp_outer_edge_left','LH','Far','Ostali dijelovi'],
+  ['Lijevi far','Lijevi far','unknown','none','Far','Ostali dijelovi'],
+  ['Nosač fara','Lijevi far','unknown','LH','Nosač fara','Ostali dijelovi'],
+  ['Prednja maglenka','Ostali dijelovi','unknown','none','Prednja maglenka','Ostali dijelovi']
+ ]){
+  const resolved=resolveScanSide(name,category,view,label);
+  check(resolved.name===expectedName&&resolved.category===expectedCategory,'photo side: '+view+' / '+label+' -> '+expectedName);
+ }
  const financeBefore=(await call('stats')).body;
  const estimate=value=>({value,count:1,basis:'verified_original_oem'});
  async function stock(number,price,estimates={}){
@@ -193,6 +206,46 @@ try{
  check((await call('items?'+filter+'&model=A7')).body.total===0,'mismatched make and model yields no rows');
  const csvFiltered=await call('items/export?format=csv&'+filter+'&model=Passat');
  check(Buffer.from(csvFiltered.body).toString().includes('FLT0')&&!Buffer.from(csvFiltered.body).toString().includes('FLT1'),'export respects make and model');
+ const {verifyFitment}=require('../lib/scan-fitment.ts');
+ const lampPage={title:'Far Range Rover Sport L320',url:'https://seller.example/part'};
+ const lampPage2={...lampPage,url:'https://another.test/part'};
+ check(verifyFitment('Land Rover Discovery 3',[lampPage,lampPage2]).sources.length===0,'Discovery 3 cannot inherit a Range Rover Sport match');
+ check(verifyFitment('Range Rover Sport L320',[lampPage,{...lampPage,url:'https://shop.seller.example/2'}]).sources.length===0,'repeat listing host does not corroborate fitment');
+ check(verifyFitment('Range Rover Sport L320',[lampPage,lampPage2]).sources.length===2,'two exact catalogue product titles agree on model and generation');
+ const withoutGeneration={...lampPage2,title:'LR012437 Range Rover Sport Headlamp'};
+ check(verifyFitment('Range Rover Sport L320',[lampPage,withoutGeneration]).vehicle==='Range Rover Sport','withhold generation when only one independent page supports it');
+ check(!verifyFitment('Range Rover Sport L320',[lampPage,{...lampPage2,title:'Range Rover Sport L494'}]).vehicle,'contradictory generation blocks fitment');
+ const {parseProductPage}=require('../lib/product-page.ts');
+ check(!parseProductPage('<title>4G0 823 029 D | Audi A6 C7</title>',lampPage.url,'4G0 823 029',true),'a spaced suffix cannot verify a different OEM');
+ const beforeScan=(await call('stats')).body;
+ const scan=(await call('items',{...item,scan_entry:true,part_number:'FIN789',vehicle:'Land Rover Discovery 3',visual_vehicle:'Range Rover Sport',enrich_after_save:true})).body;
+ check(scan.estimates._visual_vehicle==='Range Rover Sport','photo model remains visible independently of verified fitment');
+ check(scan.estimates._scan_fitment==='pending'&&!scan.estimates._enrichment&&scan.vehicle==='Vozilo nije utvrđeno','unverified scan clears model, estimates and automatic research');
+ const afterScan=(await call('stats')).body;
+ check(afterScan.missing-beforeScan.missing===1&&afterScan.inventory===beforeScan.inventory,'unverified scan excluded even when same-number price exists');
+ check((await call('items/'+scan.id+'/enrich',{wait:true})).status===409,'scan retry requires physically checked OEM');
+ const proof={part_number:'SCAN123',verified:true,name:item.name,category:item.category,vehicle:'Audi A6 C7',sources:[{title:'Catalogue',url:'https://catalog.example/part'}]};
+ await pool.query("INSERT INTO parts_app.lookup_cache(normalized,data,expires) VALUES($1,$2,now()+interval '1 hour')",['scan-fitment-v1:SCAN123',JSON.stringify(proof)]);
+ check((await call('lookup?mode=scan&number=SCAN-123')).body.verified,'scan endpoint reads exact-number catalogue verification');
+ const verified=await call('items',{...item,scan_entry:true,part_number:'SCAN-123',vehicle:proof.vehicle,enrich_after_save:true});
+ check(verified.body.estimates._scan_fitment==='verified'&&verified.body.estimates._enrichment.status==='pending','verified scan schedules prices');
+ const recovered=await call('items/'+scan.id+'/enrich',{wait:true,confirmed_oem:'SCAN-123'});
+ check(recovered.status===200&&recovered.body.item.vehicle===proof.vehicle&&recovered.body.item.estimates._scan_fitment==='verified','physically checked OEM can resolve a pending scan');
+ check(recovered.body.item.estimates._enrichment.reason==='identity'&&!recovered.body.item.estimates.EU_used,'market source naming a different model cannot set a price');
+ const {identifyVisually}=require('../lib/visual-search.ts');
+ const actualFetch=global.fetch;
+ const fixturePhoto=await require('sharp')(Buffer.from('<svg width="180" height="180"><rect width="180" height="180" fill="white"/><circle cx="90" cy="90" r="76" fill="#202020"/></svg>')).jpeg().toBuffer();
+ try{
+  global.fetch=async url=>{
+   const address=new URL(url);
+   if(address.pathname.includes('/collections/'))return Response.json({products:[{title:'Audi A4 Rear Bumper',handle:'test-part',images:[{src:'https://cdn.shopify.com/sample.jpg'}]}]});
+   if(address.hostname==='cdn.shopify.com')return new Response(fixturePhoto,{headers:{'content-type':'image/jpeg'}});
+   if(address.pathname.includes('/suggest.json'))return Response.json({resources:{results:{products:[]}}});
+   throw Error('Unexpected reference request');
+  };
+  const compared=await identifyVisually(fixturePhoto,{models:['Audi Q5'],part:'rear bumper',side:'unknown'},[]);
+  check(compared.match?.vehicle==='Audi A4','reference image can identify a model missing from the initial guesses without OEM');
+ }finally{global.fetch=actualFetch;}
  await call('logout',{});check((await call('items')).status===401,'logout invalidates session');
  const r=await pool.query("SELECT has_schema_privilege('anon','parts_app','USAGE') AS allowed");check(r.rows[0].allowed===false,'public database schema access revoked');
  console.log(`${checks} integration checks passed.`);

@@ -12,15 +12,16 @@ export function publicAddress(address:string){const family=isIP(address);return 
 const decode=(s:string)=>s.replace(/&(?:amp|quot|apos|lt|gt|nbsp);|&#(?:x[0-9a-f]+|\d+);/gi,m=>{const names:Record<string,string>={'&amp;':'&','&quot;':'"','&apos;':"'",'&lt;':'<','&gt;':'>','&nbsp;':' '};if(names[m.toLowerCase()])return names[m.toLowerCase()];const n=parseInt(m.slice(m[2].toLowerCase()==='x'?3:2,-1),m[2].toLowerCase()==='x'?16:10);return n>0&&n<=0x10ffff?String.fromCodePoint(n):'';});
 const text=(s:string)=>decode(s.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ')).replace(/\s+/g,' ').trim();
 function imageUrl(value:unknown,base:string){try{const u=new URL(String(value),base);return u.protocol==='https:'&&!u.username&&!u.password&&!/(?:logo|placeholder|no[-_]image|favicon)/i.test(u.pathname)?u.href:'';}catch{return '';}}
-export function parseProductPage(html:string,url:string,number:string){
+export function parseProductPage(html:string,url:string,number:string,strictNumber=false){
  const meta:Record<string,string>={};
  for(const match of html.matchAll(/<meta\b[^>]*>/gi)){const attrs:Record<string,string>={};for(const a of match[0].matchAll(/([\w:-]+)\s*=\s*(["'])([\s\S]*?)\2/g))attrs[a[1].toLowerCase()]=decode(a[3]);const key=attrs.property||attrs.name;if(key)meta[key.toLowerCase()]=attrs.content||'';}
  const title=meta['og:title']||text(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]||'');
- const exact=(s:unknown)=>new RegExp('(?<![A-Z0-9])'+normalize(number).split('').join('[\\s-]*')+'(?![A-Z0-9])','i').test(String(s||''));
+ const exact=(s:unknown)=>new RegExp('(?<![A-Z0-9])'+normalize(number).split('').join('[\\s-]*')+'(?![A-Z0-9])'+(strictNumber?'(?![ \\t-]+[A-Z]{1,2}\\b)':''),'i').test(String(s||''));
  const products:any[]=[];
  const walk=(v:any,depth=0)=>{if(!v||depth>5)return;if(Array.isArray(v))return v.forEach(x=>walk(x,depth+1));if(typeof v!=='object')return;if([v['@type']].flat().includes('Product'))products.push(v);if(v['@graph'])walk(v['@graph'],depth+1);if(v.mainEntity)walk(v.mainEntity,depth+1);};
  for(const script of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){try{walk(JSON.parse(script[1]));}catch{}}
- const product=products.find(p=>[p.mpn,p.sku,p.productID].some(v=>normalize(String(v||''))===normalize(number))||exact(p.name));
+ const product=products.find(p=>strictNumber&&p.mpn?normalize(String(p.mpn))===normalize(number):[p.mpn,p.sku,p.productID].some(v=>normalize(String(v||''))===normalize(number))||exact(p.name));
+ if(strictNumber&&products.length&&!product)return null;
  // No broad body-text match: category pages often mention unrelated OEM numbers.
  if(!product&&!exact(title))return null;
  const description=product?text(String(product.description||'')):meta['og:description']||meta.description||'';
@@ -46,7 +47,7 @@ async function loadPublicResource(url:string,image=false){
  try{return await Promise.race([get(url).catch(()=>null),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),8000);})]);}finally{clearTimeout(timer);}
 }
 
-export async function loadProductPage(url:string,number:string){const result=await loadPublicResource(url);return result?parseProductPage(result.bytes.toString('utf8'),result.url,number):null;}
+export async function loadProductPage(url:string,number:string,strictNumber=false){const result=await loadPublicResource(url);return result?parseProductPage(result.bytes.toString('utf8'),result.url,number,strictNumber):null;}
 export async function loadReferenceImage(url:string){
  const result=await loadPublicResource(url,true);if(!result)return null;
  try{const info=await sharp(result.bytes,{limitInputPixels:40000000}).metadata();return info.width&&info.height&&info.width>=160&&info.height>=100&&['jpeg','png','webp','avif','heif'].includes(info.format||'')?result.url:null;}catch{return null;}

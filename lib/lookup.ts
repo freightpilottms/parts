@@ -11,7 +11,7 @@ export async function lookup(number:string,refresh=false,identityOnly=false,skip
 }
 async function performLookup(number:string,refresh:boolean,identityOnly:boolean,skipKnown:boolean,beforeInternet?:()=>Promise<void>){
  const key=normalize(number);
- const known=await db.query('SELECT i.*, (SELECT id FROM parts_app.photos p WHERE p.item_id=i.id ORDER BY created_at LIMIT 1) photo_id FROM parts_app.items i WHERE normalized=$1 ORDER BY created_at DESC LIMIT 1',[key]);
+ const known=await db.query("SELECT i.*, (SELECT id FROM parts_app.photos p WHERE p.item_id=i.id ORDER BY created_at LIMIT 1) photo_id FROM parts_app.items i WHERE normalized=$1 AND COALESCE(i.estimates->>'_scan_fitment','')<>'pending' ORDER BY created_at DESC LIMIT 1",[key]);
  if(known.rows.length&&!refresh&&!skipKnown){const i=known.rows[0];const storedEstimates=Object.fromEntries(Object.entries(i.estimates||{}).filter(([,v]:any)=>v?.basis==='verified_original_oem'));return {...i,enrich_after_save:identityOnly,photos_reference:i.estimates?._enrichment?.images||[],estimates:storedEstimates,photo:i.photo_id?`/api/photos/${i.photo_id}`:i.estimates?._enrichment?.images?.[0]||null,origin:'database',message:'Pronađeno u vašoj bazi. Provjerite podatke za novi primjerak.'};}
  const provider=process.env.AI_PROVIDER||(process.env.OPENAI_API_KEY?'openai':process.env.GEMINI_API_KEY?'gemini':'web');
  const cacheKey=(identityOnly?'v6-bs-identity:':'v9-bih-currency:')+key+':'+provider+':'+(provider==='openai'?(process.env.OPENAI_MODEL||'gpt-5-mini'):(process.env.GEMINI_MODEL||'gemini-3.8-flash'));
