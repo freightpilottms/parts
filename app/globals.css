@@ -6,13 +6,13 @@
 .inventory table{min-width:800px;text-align:center}
 .inventory th,.inventory td{text-align:center;vertical-align:middle}
 .inventory th:first-child,.inventory td:first-child,.inventory th:last-child,.inventory td:last-child{padding-inline:16px}
-.inventory th:nth-child(3){width:80px}
+.inventory th:first-child{width:80px}
 .inventory th:last-child{width:50px}
 .inventory th button{display:inline-flex;align-items:center;justify-content:center;gap:5px}
 .inventory .photo-thumb{margin-inline:auto}
 .inventory .owner-cell{justify-content:center}
 .inventory td:last-child>svg{display:block;margin-inline:auto}
-.inventory td:first-child{min-width:190px;max-width:280px;white-space:normal;overflow-wrap:anywhere}
+.inventory td:nth-child(2){min-width:190px;max-width:280px;white-space:normal;overflow-wrap:anywhere}
 .inventory .price-cell,.inventory .oem-cell{font-variant-numeric:tabular-nums}
 .inventory-summary{margin-top:24px}
 .finance-panel{margin-top:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
